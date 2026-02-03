@@ -494,10 +494,10 @@ if barstate.islast
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Entry alerts con confidence
-alertcondition(longEntry and longStars >= 4, "High Confidence LONG", "LONG SIGNAL (4-5 stelle) su {{ticker}} - Confidence: " + str.tostring(longConfidenceFinal) + "%")
-alertcondition(longEntry and longStars >= 3 and longStars < 4, "Medium Confidence LONG", "LONG SIGNAL (3 stelle) su {{ticker}} - Confidence: " + str.tostring(longConfidenceFinal) + "%")
-alertcondition(shortEntry and shortStars >= 4, "High Confidence SHORT", "SHORT SIGNAL (4-5 stelle) su {{ticker}} - Confidence: " + str.tostring(shortConfidenceFinal) + "%")
-alertcondition(shortEntry and shortStars >= 3 and shortStars < 4, "Medium Confidence SHORT", "SHORT SIGNAL (3 stelle) su {{ticker}} - Confidence: " + str.tostring(shortConfidenceFinal) + "%")
+alertcondition(longEntry and longStars >= 4, "High Confidence LONG", "LONG SIGNAL (4-5 stelle) su {{ticker}} - Alta Confidenza")
+alertcondition(longEntry and longStars >= 3 and longStars < 4, "Medium Confidence LONG", "LONG SIGNAL (3 stelle) su {{ticker}} - Media Confidenza")
+alertcondition(shortEntry and shortStars >= 4, "High Confidence SHORT", "SHORT SIGNAL (4-5 stelle) su {{ticker}} - Alta Confidenza")
+alertcondition(shortEntry and shortStars >= 3 and shortStars < 4, "Medium Confidence SHORT", "SHORT SIGNAL (3 stelle) su {{ticker}} - Media Confidenza")
 
 // Standard alerts
 alertcondition(longEntry, "Long Entry", "LONG su {{ticker}}")
