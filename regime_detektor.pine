@@ -1,35 +1,77 @@
 //@version=6
 // ──────────────────────────────────────────────────────────────────────────────
-// @title        TEMA-ST-WT REGIME DETECTOR v1.2
-// @description  Indica quando operare LONG o SHORT con filtro bear market
-// @version      1.2
+// @title        TEMA-ST-WT REGIME DETECTOR v2.0 - ENHANCED
+// @description  Sistema avanzato per identificare regimi LONG/SHORT con
+//               confidence score, TP/SL dinamici, divergenze e multi-confluenza
+// @version      2.0
 // ──────────────────────────────────────────────────────────────────────────────
 
-indicator("REGIME DETECTOR v1.2", overlay=true)
+indicator("REGIME DETECTOR v2.0", overlay=true, max_labels_count=500)
 
-// — INPUT TIMEFRAME —
-tf = input.string("120", "Timeframe operativo", options = ["120","240","D"])
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUT TIMEFRAME
+// ═══════════════════════════════════════════════════════════════════════════════
+
+tf = input.string("120", "Timeframe operativo", options = ["60","120","240","D"])
 tf_filter = input.string("D", "Timeframe filtro trend", options = ["D","W"], tooltip="Short attivo SOLO se sotto TEMA 200 su questo TF")
 
-// — DATI MULTITF —
-[close_tf, high_tf, low_tf, hl2_tf, hlc3_tf, vol_tf] = request.security(syminfo.tickerid, tf, [close, high, low, hl2, hlc3, volume])
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMETRI INDICATORI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+grp_tema = "TEMA Settings"
+temaLen      = input.int(32, "TEMA length", group=grp_tema)
+temaLen_fast = input.int(9, "TEMA Fast length", group=grp_tema, tooltip="Per EMA cross confirmation")
+temaLen_slow = input.int(21, "TEMA Slow length", group=grp_tema)
+
+grp_st = "Supertrend Settings"
+stFactor     = input.float(2.6, "ST factor", group=grp_st)
+stPeriod     = input.int(10, "ST ATR period", group=grp_st)
+
+grp_wt = "WaveTrend Settings"
+wtN1         = input.int(10, "WT n1", group=grp_wt)
+wtN2         = input.int(21, "WT n2", group=grp_wt)
+wtOverbought = input.int(53, "WT Overbought", group=grp_wt)
+wtOversold   = input.int(-53, "WT Oversold", group=grp_wt)
+
+grp_rsi = "RSI Settings"
+rsiLen       = input.int(14, "RSI Length", group=grp_rsi)
+rsiOverbought = input.int(70, "RSI Overbought", group=grp_rsi)
+rsiOversold   = input.int(30, "RSI Oversold", group=grp_rsi)
+rsiDivLen    = input.int(5, "Divergence Lookback", group=grp_rsi)
+
+grp_adx = "ADX Settings"
+adxLen       = input.int(14, "ADX Length", group=grp_adx)
+adxThreshold = input.int(20, "ADX Min Trend Strength", group=grp_adx, tooltip="ADX > 20 = trend presente")
+adxStrongTrend = input.int(30, "ADX Strong Trend", group=grp_adx)
+
+grp_filter = "Filter Settings"
+maxDistATR   = input.float(1.5, "Max distance ATR", group=grp_filter)
+volMultiplier = input.float(1.2, "Volume multiplier", group=grp_filter)
+slopeThreshold = input.float(0.008, "Slope threshold", group=grp_filter)
+
+grp_tpsl = "TP/SL Settings"
+atrMultiplierSL = input.float(1.5, "Stop Loss ATR multiplier", group=grp_tpsl)
+atrMultiplierTP1 = input.float(2.0, "Take Profit 1 ATR multiplier", group=grp_tpsl)
+atrMultiplierTP2 = input.float(3.5, "Take Profit 2 ATR multiplier", group=grp_tpsl)
+atrMultiplierTP3 = input.float(5.0, "Take Profit 3 ATR multiplier", group=grp_tpsl)
+showTPSL     = input.bool(true, "Show TP/SL Levels", group=grp_tpsl)
+
+grp_bb = "Bollinger Bands (Squeeze Detection)"
+bbLen        = input.int(20, "BB Length", group=grp_bb)
+bbMult       = input.float(2.0, "BB Multiplier", group=grp_bb)
+kcLen        = input.int(20, "Keltner Length", group=grp_bb)
+kcMult       = input.float(1.5, "Keltner Multiplier", group=grp_bb)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATI MULTITF
+// ═══════════════════════════════════════════════════════════════════════════════
+
+[close_tf, high_tf, low_tf, hl2_tf, hlc3_tf, vol_tf, open_tf] = request.security(syminfo.tickerid, tf, [close, high, low, hl2, hlc3, volume, open])
 close_htf = request.security(syminfo.tickerid, tf_filter, close)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PARAMETRI BASE
-// ═══════════════════════════════════════════════════════════════════════════════
-
-temaLen      = input.int(32, "TEMA length")
-stFactor     = input.float(2.6, "ST factor")
-stPeriod     = input.int(10, "ST ATR period")
-wtN1         = input.int(10, "WT n1")
-wtN2         = input.int(21, "WT n2")
-maxDistATR   = input.float(1.5, "Max distance ATR")
-volMultiplier = input.float(1.2, "Volume multiplier")
-slopeThreshold = input.float(0.008, "Slope threshold")
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// FILTRO BEAR MARKET
+// FILTRO BEAR MARKET (HTF)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 tema200_htf = request.security(syminfo.tickerid, tf_filter, 3*ta.ema(close, 200) - 3*ta.ema(ta.ema(close, 200), 200) + ta.ema(ta.ema(ta.ema(close, 200), 200), 200))
@@ -37,14 +79,25 @@ isBearMarket = close_htf < tema200_htf
 isBullMarket = close_htf > tema200_htf
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// INDICATORS
+// INDICATORI PRINCIPALI
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TEMA
+// --- TEMA ---
 tema = 3*ta.ema(close_tf, temaLen) - 3*ta.ema(ta.ema(close_tf, temaLen), temaLen) + ta.ema(ta.ema(ta.ema(close_tf, temaLen), temaLen), temaLen)
+tema_fast = 3*ta.ema(close_tf, temaLen_fast) - 3*ta.ema(ta.ema(close_tf, temaLen_fast), temaLen_fast) + ta.ema(ta.ema(ta.ema(close_tf, temaLen_fast), temaLen_fast), temaLen_fast)
+tema_slow = 3*ta.ema(close_tf, temaLen_slow) - 3*ta.ema(ta.ema(close_tf, temaLen_slow), temaLen_slow) + ta.ema(ta.ema(ta.ema(close_tf, temaLen_slow), temaLen_slow), temaLen_slow)
 
-// Supertrend
+// TEMA Cross
+temaCrossUp = ta.crossover(tema_fast, tema_slow)
+temaCrossDown = ta.crossunder(tema_fast, tema_slow)
+temaFastAboveSlow = tema_fast > tema_slow
+temaFastBelowSlow = tema_fast < tema_slow
+
+// --- ATR ---
 atr = ta.atr(stPeriod)
+atr14 = ta.atr(14)
+
+// --- Supertrend ---
 upC = hl2_tf - stFactor * atr
 dnC = hl2_tf + stFactor * atr
 var float _up = na
@@ -54,7 +107,7 @@ _up := close_tf[1] > nz(_up[1], upC) ? math.max(upC, nz(_up[1], upC)) : upC
 _dn := close_tf[1] < nz(_dn[1], dnC) ? math.min(dnC, nz(_dn[1], dnC)) : dnC
 trend := close_tf > _dn[1] ? 1 : close_tf < _up[1] ? -1 : nz(trend[1])
 
-// Wave Trend
+// --- Wave Trend ---
 ap  = hlc3_tf
 esa = ta.ema(ap, wtN1)
 d   = ta.ema(math.abs(ap - esa), wtN1)
@@ -64,47 +117,198 @@ wt2 = ta.sma(wt1, 4)
 
 wtBullish = wt1 > wt2
 wtBearish = wt1 < wt2
+wtCrossUp = ta.crossover(wt1, wt2)
+wtCrossDown = ta.crossunder(wt1, wt2)
+wtOB = wt1 > wtOverbought
+wtOS = wt1 < wtOversold
 
-// TEMA slope
+// --- RSI ---
+rsi = ta.rsi(close_tf, rsiLen)
+rsiOB = rsi > rsiOverbought
+rsiOS = rsi < rsiOversold
+rsiBullish = rsi > 50
+rsiBearish = rsi < 50
+
+// RSI Divergence Detection
+// Bullish divergence: price makes lower low, RSI makes higher low
+rsiLow = ta.lowest(rsi, rsiDivLen)
+priceLow = ta.lowest(low_tf, rsiDivLen)
+rsiBullDiv = low_tf <= priceLow[rsiDivLen] and rsi > rsiLow[rsiDivLen] and rsiOS
+
+// Bearish divergence: price makes higher high, RSI makes lower high
+rsiHigh = ta.highest(rsi, rsiDivLen)
+priceHigh = ta.highest(high_tf, rsiDivLen)
+rsiBearDiv = high_tf >= priceHigh[rsiDivLen] and rsi < rsiHigh[rsiDivLen] and rsiOB
+
+// --- ADX ---
+[diplus, diminus, adx] = ta.dmi(adxLen, adxLen)
+adxTrending = adx > adxThreshold
+adxStrongTrending = adx > adxStrongTrend
+adxBullish = diplus > diminus
+adxBearish = diminus > diplus
+
+// --- Bollinger Bands Squeeze ---
+bbBasis = ta.sma(close_tf, bbLen)
+bbDev = bbMult * ta.stdev(close_tf, bbLen)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+kcBasis = ta.ema(close_tf, kcLen)
+kcRange = ta.atr(kcLen)
+kcUpper = kcBasis + kcMult * kcRange
+kcLower = kcBasis - kcMult * kcRange
+
+// Squeeze: BB inside KC = low volatility, preparing for breakout
+sqzOn = bbLower > kcLower and bbUpper < kcUpper
+sqzOff = bbLower < kcLower or bbUpper > kcUpper
+noSqz = sqzOn == false and sqzOff == false
+
+// Squeeze momentum
+sqzVal = ta.linreg(close_tf - math.avg(math.avg(ta.highest(high_tf, kcLen), ta.lowest(low_tf, kcLen)), kcBasis), kcLen, 0)
+sqzMomUp = sqzVal > 0
+sqzMomDown = sqzVal < 0
+
+// --- TEMA slope ---
 tema_slope = tema - tema[1]
+tema_slope_pct = (tema_slope / tema[1]) * 100
 tema_bullish = tema_slope > 0.001
 tema_bearish = tema_slope < -0.001
 
-// Distanza da TEMA
+// --- Distanza da TEMA ---
 distATR_long = (close_tf - tema) / atr
 distATR_short = (tema - close_tf) / atr
 
-// Filtro lateralità
+// --- Filtro lateralita migliorato ---
 tema_slope_ratio = math.abs(tema_slope) / ta.atr(10)
 isFlatSlope = tema_slope_ratio < slopeThreshold
 rangeHigh5 = ta.highest(high_tf, 5)
 rangeLow5  = ta.lowest(low_tf, 5)
 rangeCond  = (rangeHigh5 - rangeLow5) / close_tf < 0.01
-isLateral  = isFlatSlope or rangeCond
+isLateral  = (isFlatSlope or rangeCond) and sqzOn
 
-// Volume
+// --- Volume ---
 volMA = ta.sma(vol_tf, 20)
 highVolume = vol_tf > volMA * volMultiplier
+volumeIncreasing = vol_tf > vol_tf[1]
+
+// --- Candlestick Patterns ---
+bullishEngulfing = close_tf[1] < open_tf[1] and close_tf > open_tf and close_tf > open_tf[1] and open_tf < close_tf[1]
+bearishEngulfing = close_tf[1] > open_tf[1] and close_tf < open_tf and close_tf < open_tf[1] and open_tf > close_tf[1]
+hammer = (high_tf - low_tf) > 3 * math.abs(close_tf - open_tf) and (close_tf - low_tf) / (0.001 + high_tf - low_tf) > 0.6 and (open_tf - low_tf) / (0.001 + high_tf - low_tf) > 0.6
+shootingStar = (high_tf - low_tf) > 3 * math.abs(close_tf - open_tf) and (high_tf - close_tf) / (0.001 + high_tf - low_tf) > 0.6 and (high_tf - open_tf) / (0.001 + high_tf - low_tf) > 0.6
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// REGIME DETECTION
+// CONFIDENCE SCORING SYSTEM (0-100)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// LONG regime (sempre attivo se condizioni ok)
+// Long Score Components
+longScore_trend = trend == 1 ? 15.0 : 0.0
+longScore_tema = temaFastAboveSlow ? 15.0 : 0.0
+longScore_wt = wtBullish ? 10.0 : 0.0
+longScore_wtCross = wtCrossUp ? 5.0 : 0.0
+longScore_rsi = rsiBullish ? 10.0 : 0.0
+longScore_rsiDiv = rsiBullDiv ? 10.0 : 0.0
+longScore_adx = adxTrending and adxBullish ? 10.0 : adxStrongTrending and adxBullish ? 15.0 : 0.0
+longScore_volume = highVolume ? 5.0 : 0.0
+longScore_squeeze = sqzOff and sqzMomUp ? 10.0 : sqzOn ? 5.0 : 0.0
+longScore_distance = distATR_long <= maxDistATR ? 5.0 : distATR_long <= maxDistATR * 0.5 ? 10.0 : 0.0
+longScore_candle = bullishEngulfing or hammer ? 5.0 : 0.0
+
+longConfidence = longScore_trend + longScore_tema + longScore_wt + longScore_wtCross + longScore_rsi + longScore_rsiDiv + longScore_adx + longScore_volume + longScore_squeeze + longScore_distance + longScore_candle
+
+// Short Score Components
+shortScore_trend = trend == -1 ? 15.0 : 0.0
+shortScore_tema = temaFastBelowSlow ? 15.0 : 0.0
+shortScore_wt = wtBearish ? 10.0 : 0.0
+shortScore_wtCross = wtCrossDown ? 5.0 : 0.0
+shortScore_rsi = rsiBearish ? 10.0 : 0.0
+shortScore_rsiDiv = rsiBearDiv ? 10.0 : 0.0
+shortScore_adx = adxTrending and adxBearish ? 10.0 : adxStrongTrending and adxBearish ? 15.0 : 0.0
+shortScore_volume = highVolume ? 5.0 : 0.0
+shortScore_squeeze = sqzOff and sqzMomDown ? 10.0 : sqzOn ? 5.0 : 0.0
+shortScore_distance = distATR_short <= maxDistATR ? 5.0 : distATR_short <= maxDistATR * 0.5 ? 10.0 : 0.0
+shortScore_candle = bearishEngulfing or shootingStar ? 5.0 : 0.0
+shortScore_bearMkt = isBearMarket ? 10.0 : 0.0
+
+shortConfidence = shortScore_trend + shortScore_tema + shortScore_wt + shortScore_wtCross + shortScore_rsi + shortScore_rsiDiv + shortScore_adx + shortScore_volume + shortScore_squeeze + shortScore_distance + shortScore_candle + shortScore_bearMkt
+
+// Normalize to 0-100 scale and apply market filter
+longConfidenceFinal = math.min(100, longConfidence)
+shortConfidenceFinal = isBearMarket ? math.min(100, shortConfidence) : 0.0
+
+// Confidence Levels
+longStars = longConfidenceFinal >= 80 ? 5 : longConfidenceFinal >= 65 ? 4 : longConfidenceFinal >= 50 ? 3 : longConfidenceFinal >= 35 ? 2 : longConfidenceFinal >= 20 ? 1 : 0
+shortStars = shortConfidenceFinal >= 80 ? 5 : shortConfidenceFinal >= 65 ? 4 : shortConfidenceFinal >= 50 ? 3 : shortConfidenceFinal >= 35 ? 2 : shortConfidenceFinal >= 20 ? 1 : 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGIME DETECTION (IMPROVED)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Condizioni minime per attivare regime
+minConfidenceLong = 50.0
+minConfidenceShort = 55.0
+
+// LONG regime
 longTrend = trend == 1
 longMomentum = wtBullish
 longDistance = distATR_long <= maxDistATR
-longSetup = longTrend and longMomentum and longDistance and not isLateral
+longSetup = longTrend and longMomentum and longDistance and not isLateral and longConfidenceFinal >= minConfidenceLong
 
-// SHORT regime (SOLO in bear market confermato)
+// SHORT regime (SOLO in bear market con confidence alta)
 shortTrend = trend == -1
 shortMomentum = wtBearish
 shortSlope = tema_bearish
 shortDistance = distATR_short <= maxDistATR
-shortSetup = shortTrend and shortMomentum and shortSlope and shortDistance and not isLateral and highVolume and isBearMarket
+shortSetup = shortTrend and shortMomentum and shortSlope and shortDistance and not isLateral and highVolume and isBearMarket and shortConfidenceFinal >= minConfidenceShort
 
 // Regime finale
 regime = longSetup ? 1 : shortSetup ? -1 : 0
+
+// Segnali Entry
+longEntry = regime == 1 and regime[1] != 1
+shortEntry = regime == -1 and regime[1] != -1
+exitSignal = regime == 0 and regime[1] != 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAKE PROFIT & STOP LOSS LEVELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var float entryPrice = na
+var float stopLoss = na
+var float tp1 = na
+var float tp2 = na
+var float tp3 = na
+var int currentPosition = 0  // 1 = long, -1 = short, 0 = flat
+
+if longEntry
+    entryPrice := close_tf
+    stopLoss := close_tf - atr14 * atrMultiplierSL
+    tp1 := close_tf + atr14 * atrMultiplierTP1
+    tp2 := close_tf + atr14 * atrMultiplierTP2
+    tp3 := close_tf + atr14 * atrMultiplierTP3
+    currentPosition := 1
+
+if shortEntry
+    entryPrice := close_tf
+    stopLoss := close_tf + atr14 * atrMultiplierSL
+    tp1 := close_tf - atr14 * atrMultiplierTP1
+    tp2 := close_tf - atr14 * atrMultiplierTP2
+    tp3 := close_tf - atr14 * atrMultiplierTP3
+    currentPosition := -1
+
+if exitSignal
+    entryPrice := na
+    stopLoss := na
+    tp1 := na
+    tp2 := na
+    tp3 := na
+    currentPosition := 0
+
+// Risk/Reward calculation
+riskPips = math.abs(entryPrice - stopLoss)
+rr1 = riskPips > 0 ? math.abs(tp1 - entryPrice) / riskPips : na
+rr2 = riskPips > 0 ? math.abs(tp2 - entryPrice) / riskPips : na
+rr3 = riskPips > 0 ? math.abs(tp3 - entryPrice) / riskPips : na
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VISUALIZZAZIONE
@@ -114,8 +318,10 @@ regime = longSetup ? 1 : shortSetup ? -1 : 0
 bgMarket = isBearMarket ? color.new(color.red, 97) : color.new(color.green, 97)
 bgcolor(bgMarket)
 
-// Background regime operativo
-bgColor = regime == 1 ? color.new(color.green, 85) : regime == -1 ? color.new(color.red, 85) : na
+// Background regime operativo con intensita basata su confidence
+longBgIntensity = longConfidenceFinal >= 80 ? 80 : longConfidenceFinal >= 65 ? 85 : 90
+shortBgIntensity = shortConfidenceFinal >= 80 ? 80 : shortConfidenceFinal >= 65 ? 85 : 90
+bgColor = regime == 1 ? color.new(color.green, longBgIntensity) : regime == -1 ? color.new(color.red, shortBgIntensity) : na
 bgcolor(bgColor)
 
 // TEMA 200 HTF
@@ -125,63 +331,187 @@ plot(tema200_htf, "TEMA 200 HTF", color=isBearMarket ? color.new(color.red, 30) 
 temaColor = tema_bullish ? color.green : tema_bearish ? color.red : color.gray
 plot(tema, "TEMA", color=temaColor, linewidth=2)
 
+// TEMA Fast/Slow
+plot(tema_fast, "TEMA Fast", color=color.new(color.blue, 50), linewidth=1)
+plot(tema_slow, "TEMA Slow", color=color.new(color.orange, 50), linewidth=1)
+
 // Supertrend
 plot(trend==1 ? _up : na, "ST Up", color=color.green, linewidth=2)
 plot(trend==-1 ? _dn : na, "ST Dn", color=color.red, linewidth=2)
 
-// Segnali entry
-plotshape(regime == 1 and regime[1] != 1, "LONG Signal", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.normal)
-plotshape(regime == -1 and regime[1] != -1, "SHORT Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
+// TP/SL Levels
+plot(showTPSL and currentPosition != 0 ? entryPrice : na, "Entry", color=color.white, linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? stopLoss : na, "Stop Loss", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp1 : na, "TP1", color=color.new(color.lime, 30), linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp2 : na, "TP2", color=color.new(color.lime, 20), linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp3 : na, "TP3", color=color.new(color.lime, 0), linewidth=2, style=plot.style_linebr)
+
+// Segnali entry con confidence
+plotshape(longEntry, "LONG Signal", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.normal)
+plotshape(shortEntry, "SHORT Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
+
+// Labels con confidence
+if longEntry
+    label.new(bar_index, low_tf - atr14, "LONG\n" + str.tostring(longConfidenceFinal, "#") + "%\n" + str.tostring(longStars) + " stelle", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if shortEntry
+    label.new(bar_index, high_tf + atr14, "SHORT\n" + str.tostring(shortConfidenceFinal, "#") + "%\n" + str.tostring(shortStars) + " stelle", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+// Divergence markers
+plotshape(rsiBullDiv and not rsiBullDiv[1], "RSI Bull Div", shape.diamond, location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(rsiBearDiv and not rsiBearDiv[1], "RSI Bear Div", shape.diamond, location.abovebar, color.new(color.fuchsia, 0), size=size.tiny)
+
+// Squeeze indicator
+plotshape(sqzOn, "Squeeze On", shape.square, location.bottom, color.new(color.red, 0), size=size.tiny)
+plotshape(sqzOff, "Squeeze Off", shape.square, location.bottom, color.new(color.green, 0), size=size.tiny)
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DASHBOARD
+// DASHBOARD COMPLETA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-var table dashboard = table.new(position.bottom_center, 2, 10, border_width=2)
+var table dashboard = table.new(position.top_right, 3, 18, border_width=1, frame_width=2, frame_color=color.gray)
 
 if barstate.islast
     // Header
-    regimeText = regime == 1 ? "🟢 LONG REGIME" : regime == -1 ? "🔴 SHORT REGIME" : "⚪ NEUTRAL"
+    regimeText = regime == 1 ? "LONG" : regime == -1 ? "SHORT" : "NEUTRAL"
     regimeColor = regime == 1 ? color.green : regime == -1 ? color.red : color.gray
-    
-    table.cell(dashboard, 0, 0, "MARKET REGIME", text_color=color.white, bgcolor=color.blue, text_size=size.large)
-    table.cell(dashboard, 1, 0, regimeText, text_color=color.white, bgcolor=regimeColor, text_size=size.large)
-    
-    // Market trend HTF
-    marketText = isBearMarket ? "🐻 BEAR" : "🐂 BULL"
-    marketColor = isBearMarket ? color.red : color.green
-    table.cell(dashboard, 0, 1, "Market Trend HTF", text_color=color.white, bgcolor=color.new(color.gray, 30), text_size=size.normal)
-    table.cell(dashboard, 1, 1, marketText, text_color=color.white, bgcolor=marketColor, text_size=size.normal)
-    
-    // Long conditions
-    table.cell(dashboard, 0, 2, "LONG Setup", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.normal)
-    table.cell(dashboard, 1, 2, longSetup ? "✓ ACTIVE" : "✗ Off", text_color=color.white, bgcolor=longSetup ? color.green : color.new(color.gray, 50), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 3, "  ST Trend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 3, longTrend ? "✓" : "✗", text_color=longTrend ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 4, "  WT Momentum", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 4, longMomentum ? "✓" : "✗", text_color=longMomentum ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
-    
-    // Short conditions
-    table.cell(dashboard, 0, 5, "SHORT Setup", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.normal)
-    table.cell(dashboard, 1, 5, shortSetup ? "✓ ACTIVE" : "✗ Off", text_color=color.white, bgcolor=shortSetup ? color.red : color.new(color.gray, 50), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 6, "  Bear Market", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 6, isBearMarket ? "✓" : "✗", text_color=isBearMarket ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 7, "  ST Trend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 7, shortTrend ? "✓" : "✗", text_color=shortTrend ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 8, "  TEMA Slope", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 8, shortSlope ? "✓" : "✗", text_color=shortSlope ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
-    
-    table.cell(dashboard, 0, 9, "  Volume", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.normal)
-    table.cell(dashboard, 1, 9, highVolume ? "✓" : "✗", text_color=highVolume ? color.lime : color.red, bgcolor=color.new(color.gray, 60), text_size=size.normal)
 
-// Alerts
-alertcondition(regime == 1 and regime[1] != 1, "Long Regime", "⬆ ATTIVA STRATEGIA LONG su {{ticker}}")
-alertcondition(regime == -1 and regime[1] != -1, "Short Regime", "⬇ ATTIVA STRATEGIA SHORT su {{ticker}}")
-alertcondition(regime == 0 and regime[1] != 0, "Neutral", "⏸ STOP - Mercato neutrale su {{ticker}}")
-alertcondition(isBearMarket and not isBearMarket[1], "Bear Market Start", "🐻 INIZIO BEAR MARKET su {{ticker}}")
-alertcondition(isBullMarket and not isBullMarket[1], "Bull Market Start", "🐂 INIZIO BULL MARKET su {{ticker}}")
+    table.cell(dashboard, 0, 0, "REGIME DETECTOR v2.0", text_color=color.white, bgcolor=color.blue, text_size=size.normal)
+    table.merge_cells(dashboard, 0, 0, 2, 0)
+
+    // Current regime with stars
+    starsText = regime == 1 ? str.tostring(longStars) + "/5" : regime == -1 ? str.tostring(shortStars) + "/5" : "-"
+    table.cell(dashboard, 0, 1, "REGIME", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    table.cell(dashboard, 1, 1, regimeText, text_color=color.white, bgcolor=regimeColor, text_size=size.normal)
+    table.cell(dashboard, 2, 1, starsText, text_color=color.white, bgcolor=regimeColor, text_size=size.small)
+
+    // Confidence scores
+    table.cell(dashboard, 0, 2, "CONFIDENCE", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 2, "Long: " + str.tostring(longConfidenceFinal, "#") + "%", text_color=longConfidenceFinal >= 50 ? color.lime : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 2, "Short: " + str.tostring(shortConfidenceFinal, "#") + "%", text_color=shortConfidenceFinal >= 50 ? color.red : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Market HTF
+    marketText = isBearMarket ? "BEAR" : "BULL"
+    marketColor = isBearMarket ? color.red : color.green
+    table.cell(dashboard, 0, 3, "Market HTF", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.tiny)
+    table.cell(dashboard, 1, 3, marketText, text_color=color.white, bgcolor=marketColor, text_size=size.small)
+    table.cell(dashboard, 2, 3, tf_filter, text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+
+    // Separator
+    table.cell(dashboard, 0, 4, "--- INDICATORI ---", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.tiny)
+    table.merge_cells(dashboard, 0, 4, 2, 4)
+
+    // Supertrend
+    stText = trend == 1 ? "BULLISH" : "BEARISH"
+    stColor = trend == 1 ? color.green : color.red
+    table.cell(dashboard, 0, 5, "Supertrend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 5, stText, text_color=color.white, bgcolor=stColor, text_size=size.tiny)
+    table.cell(dashboard, 2, 5, trend == 1 ? "+15" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // TEMA Cross
+    temaText = temaFastAboveSlow ? "BULLISH" : "BEARISH"
+    temaCol = temaFastAboveSlow ? color.green : color.red
+    table.cell(dashboard, 0, 6, "TEMA Cross", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 6, temaText, text_color=color.white, bgcolor=temaCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 6, temaFastAboveSlow ? "+15" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // WaveTrend
+    wtText = wtBullish ? "BULLISH" : "BEARISH"
+    wtCol = wtBullish ? color.green : color.red
+    table.cell(dashboard, 0, 7, "WaveTrend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 7, wtText + (wtOB ? " [OB]" : wtOS ? " [OS]" : ""), text_color=color.white, bgcolor=wtCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 7, wtBullish ? "+10" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // RSI
+    rsiText = rsiBullish ? "BULLISH" : "BEARISH"
+    rsiCol = rsiBullish ? color.green : color.red
+    table.cell(dashboard, 0, 8, "RSI (" + str.tostring(rsi, "#") + ")", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 8, rsiText + (rsiOB ? " [OB]" : rsiOS ? " [OS]" : ""), text_color=color.white, bgcolor=rsiCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 8, rsiBullish ? "+10" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // RSI Divergence
+    divText = rsiBullDiv ? "BULL DIV" : rsiBearDiv ? "BEAR DIV" : "None"
+    divCol = rsiBullDiv ? color.green : rsiBearDiv ? color.red : color.gray
+    table.cell(dashboard, 0, 9, "Divergence", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 9, divText, text_color=color.white, bgcolor=divCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 9, rsiBullDiv or rsiBearDiv ? "+10" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ADX
+    adxText = adxTrending ? (adxBullish ? "TREND UP" : "TREND DN") : "NO TREND"
+    adxCol = adxTrending ? (adxBullish ? color.green : color.red) : color.gray
+    table.cell(dashboard, 0, 10, "ADX (" + str.tostring(adx, "#") + ")", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 10, adxText + (adxStrongTrending ? " [STRONG]" : ""), text_color=color.white, bgcolor=adxCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 10, adxStrongTrending and adxBullish ? "+15" : adxTrending and adxBullish ? "+10" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Squeeze
+    sqzText = sqzOn ? "SQUEEZE" : sqzOff ? "FIRED" : "OFF"
+    sqzCol = sqzOn ? color.orange : sqzOff ? (sqzMomUp ? color.green : color.red) : color.gray
+    table.cell(dashboard, 0, 11, "BB Squeeze", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 11, sqzText + (sqzOff ? (sqzMomUp ? " UP" : " DN") : ""), text_color=color.white, bgcolor=sqzCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 11, sqzOff and sqzMomUp ? "+10" : sqzOn ? "+5" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Volume
+    volText = highVolume ? "HIGH" : "Normal"
+    volCol = highVolume ? color.green : color.gray
+    table.cell(dashboard, 0, 12, "Volume", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 12, volText, text_color=color.white, bgcolor=volCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 12, highVolume ? "+5" : "0", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Lateral filter
+    latText = isLateral ? "LATERAL" : "OK"
+    latCol = isLateral ? color.orange : color.green
+    table.cell(dashboard, 0, 13, "Market State", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 13, latText, text_color=color.white, bgcolor=latCol, text_size=size.tiny)
+    table.cell(dashboard, 2, 13, "", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Separator
+    table.cell(dashboard, 0, 14, "--- TP/SL ---", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.tiny)
+    table.merge_cells(dashboard, 0, 14, 2, 14)
+
+    // TP/SL Info
+    if currentPosition != 0
+        table.cell(dashboard, 0, 15, "Entry", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 15, str.tostring(entryPrice, "#.##"), text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 15, "", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+        table.cell(dashboard, 0, 16, "Stop Loss", text_color=color.white, bgcolor=color.new(color.red, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 16, str.tostring(stopLoss, "#.##"), text_color=color.white, bgcolor=color.new(color.red, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 16, "Risk", text_color=color.white, bgcolor=color.new(color.red, 60), text_size=size.tiny)
+
+        table.cell(dashboard, 0, 17, "TP1/TP2/TP3", text_color=color.white, bgcolor=color.new(color.green, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 17, str.tostring(tp1, "#.##") + "/" + str.tostring(tp2, "#.##") + "/" + str.tostring(tp3, "#.##"), text_color=color.white, bgcolor=color.new(color.green, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 17, "RR: " + str.tostring(rr1, "#.#") + "/" + str.tostring(rr2, "#.#") + "/" + str.tostring(rr3, "#.#"), text_color=color.white, bgcolor=color.new(color.green, 60), text_size=size.tiny)
+    else
+        table.cell(dashboard, 0, 15, "No Position", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, 15, 2, 15)
+        table.cell(dashboard, 0, 16, "", text_color=color.white, bgcolor=color.new(color.gray, 80), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, 16, 2, 16)
+        table.cell(dashboard, 0, 17, "", text_color=color.white, bgcolor=color.new(color.gray, 80), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, 17, 2, 17)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Entry alerts con confidence
+alertcondition(longEntry and longStars >= 4, "High Confidence LONG", "LONG SIGNAL (4-5 stelle) su {{ticker}} - Confidence: " + str.tostring(longConfidenceFinal) + "%")
+alertcondition(longEntry and longStars >= 3 and longStars < 4, "Medium Confidence LONG", "LONG SIGNAL (3 stelle) su {{ticker}} - Confidence: " + str.tostring(longConfidenceFinal) + "%")
+alertcondition(shortEntry and shortStars >= 4, "High Confidence SHORT", "SHORT SIGNAL (4-5 stelle) su {{ticker}} - Confidence: " + str.tostring(shortConfidenceFinal) + "%")
+alertcondition(shortEntry and shortStars >= 3 and shortStars < 4, "Medium Confidence SHORT", "SHORT SIGNAL (3 stelle) su {{ticker}} - Confidence: " + str.tostring(shortConfidenceFinal) + "%")
+
+// Standard alerts
+alertcondition(longEntry, "Long Entry", "LONG su {{ticker}}")
+alertcondition(shortEntry, "Short Entry", "SHORT su {{ticker}}")
+alertcondition(exitSignal, "Exit Signal", "EXIT - Mercato neutrale su {{ticker}}")
+
+// Market regime change
+alertcondition(isBearMarket and not isBearMarket[1], "Bear Market Start", "INIZIO BEAR MARKET su {{ticker}}")
+alertcondition(isBullMarket and not isBullMarket[1], "Bull Market Start", "INIZIO BULL MARKET su {{ticker}}")
+
+// Divergence alerts
+alertcondition(rsiBullDiv and not rsiBullDiv[1], "RSI Bullish Divergence", "RSI Bullish Divergence su {{ticker}} - Potenziale inversione UP")
+alertcondition(rsiBearDiv and not rsiBearDiv[1], "RSI Bearish Divergence", "RSI Bearish Divergence su {{ticker}} - Potenziale inversione DOWN")
+
+// Squeeze alerts
+alertcondition(sqzOff and sqzOn[1] and sqzMomUp, "Squeeze Fired UP", "Squeeze FIRED UP su {{ticker}} - Momentum bullish")
+alertcondition(sqzOff and sqzOn[1] and sqzMomDown, "Squeeze Fired DOWN", "Squeeze FIRED DOWN su {{ticker}} - Momentum bearish")
