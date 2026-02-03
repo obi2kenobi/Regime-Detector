@@ -369,7 +369,7 @@ plotshape(sqzOff, "Squeeze Off", shape.square, location.bottom, color.new(color.
 // DASHBOARD COMPLETA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-var table dashboard = table.new(position.top_right, 3, 18, border_width=1, frame_width=2, frame_color=color.gray)
+var table dashboard = table.new(position.bottom_left, 3, 18, border_width=1, frame_width=2, frame_color=color.gray)
 
 if barstate.islast
     // Header
