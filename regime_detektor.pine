@@ -93,9 +93,9 @@ temaCrossDown = ta.crossunder(tema_fast, tema_slow)
 temaFastAboveSlow = tema_fast > tema_slow
 temaFastBelowSlow = tema_fast < tema_slow
 
-// --- ATR ---
-atr = ta.atr(stPeriod)
-atr14 = ta.atr(14)
+// --- ATR (dal timeframe operativo, non dal grafico corrente) ---
+atr   = request.security(syminfo.tickerid, tf, ta.atr(stPeriod))
+atr14 = request.security(syminfo.tickerid, tf, ta.atr(14))
 
 // --- Supertrend ---
 upC = hl2_tf - stFactor * atr
@@ -140,8 +140,8 @@ rsiHigh = ta.highest(rsi, rsiDivLen)
 priceHigh = ta.highest(high_tf, rsiDivLen)
 rsiBearDiv = high_tf >= priceHigh[rsiDivLen] and rsi < rsiHigh[rsiDivLen] and rsiOB
 
-// --- ADX ---
-[diplus, diminus, adx] = ta.dmi(adxLen, adxLen)
+// --- ADX (dal timeframe operativo) ---
+[diplus, diminus, adx] = request.security(syminfo.tickerid, tf, ta.dmi(adxLen, adxLen))
 adxTrending = adx > adxThreshold
 adxStrongTrending = adx > adxStrongTrend
 adxBullish = diplus > diminus
@@ -154,14 +154,13 @@ bbUpper = bbBasis + bbDev
 bbLower = bbBasis - bbDev
 
 kcBasis = ta.ema(close_tf, kcLen)
-kcRange = ta.atr(kcLen)
+kcRange = request.security(syminfo.tickerid, tf, ta.atr(kcLen))
 kcUpper = kcBasis + kcMult * kcRange
 kcLower = kcBasis - kcMult * kcRange
 
 // Squeeze: BB inside KC = low volatility, preparing for breakout
-sqzOn = bbLower > kcLower and bbUpper < kcUpper
-sqzOff = bbLower < kcLower or bbUpper > kcUpper
-noSqz = sqzOn == false and sqzOff == false
+sqzOn  = bbLower > kcLower and bbUpper < kcUpper
+sqzOff = bbLower < kcLower or  bbUpper > kcUpper
 
 // Squeeze momentum
 sqzVal = ta.linreg(close_tf - math.avg(math.avg(ta.highest(high_tf, kcLen), ta.lowest(low_tf, kcLen)), kcBasis), kcLen, 0)
@@ -171,20 +170,20 @@ sqzMomDown = sqzVal < 0
 // --- TEMA slope ---
 tema_slope = tema - tema[1]
 tema_slope_pct = (tema_slope / tema[1]) * 100
-tema_bullish = tema_slope > 0.001
-tema_bearish = tema_slope < -0.001
+tema_bullish = tema_slope_pct > 0.001   // normalizzato sul prezzo, funziona su qualsiasi asset
+tema_bearish = tema_slope_pct < -0.001
 
 // --- Distanza da TEMA ---
 distATR_long = (close_tf - tema) / atr
 distATR_short = (tema - close_tf) / atr
 
 // --- Filtro lateralita migliorato ---
-tema_slope_ratio = math.abs(tema_slope) / ta.atr(10)
+tema_slope_ratio = math.abs(tema_slope) / atr  // atr gia' sul tf operativo
 isFlatSlope = tema_slope_ratio < slopeThreshold
 rangeHigh5 = ta.highest(high_tf, 5)
 rangeLow5  = ta.lowest(low_tf, 5)
 rangeCond  = (rangeHigh5 - rangeLow5) / close_tf < 0.01
-isLateral  = (isFlatSlope or rangeCond) and sqzOn
+isLateral  = (isFlatSlope and rangeCond) or sqzOn  // laterale se entrambe le condizioni o se in squeeze
 
 // --- Volume ---
 volMA = ta.sma(vol_tf, 20)
