@@ -111,7 +111,7 @@ trend := close_tf > _dn[1] ? 1 : close_tf < _up[1] ? -1 : nz(trend[1])
 ap  = hlc3_tf
 esa = ta.ema(ap, wtN1)
 d   = ta.ema(math.abs(ap - esa), wtN1)
-ci  = (ap - esa) / (0.015 * d)
+ci  = d != 0 ? (ap - esa) / (0.015 * d) : 0.0
 wt1 = ta.ema(ci, wtN2)
 wt2 = ta.sma(wt1, 4)
 
@@ -222,8 +222,8 @@ longPil_str_vol = highVolume ? 7.0 : 0.0
 longCatStrength    = math.min(25.0, longPil_str_adx + longPil_str_vol)
 
 // TIMING (max 25): buon punto di ingresso?
-longPil_tim_sqz    = sqzOff and sqzMomUp ? 10.0 : sqzOn ? 3.0 : 0.0
-longPil_tim_dist   = distATR_long <= maxDistATR * 0.5 ? 10.0 : distATR_long <= maxDistATR ? 5.0 : 0.0
+longPil_tim_sqz    = sqzOff and sqzMomUp ? 10.0 : 0.0
+longPil_tim_dist   = distATR_long >= 0 and distATR_long <= maxDistATR * 0.5 ? 10.0 : distATR_long >= 0 and distATR_long <= maxDistATR ? 5.0 : 0.0
 longPil_tim_candle = bullishEngulfing or hammer ? 5.0 : 0.0
 longCatTiming      = math.min(25.0, longPil_tim_sqz + longPil_tim_dist + longPil_tim_candle)
 
@@ -251,8 +251,8 @@ shortPil_str_vol = highVolume ? 7.0 : 0.0
 shortCatStrength    = math.min(25.0, shortPil_str_adx + shortPil_str_vol)
 
 // TIMING (max 25)
-shortPil_tim_sqz    = sqzOff and sqzMomDown ? 10.0 : sqzOn ? 3.0 : 0.0
-shortPil_tim_dist   = distATR_short <= maxDistATR * 0.5 ? 10.0 : distATR_short <= maxDistATR ? 5.0 : 0.0
+shortPil_tim_sqz    = sqzOff and sqzMomDown ? 10.0 : 0.0
+shortPil_tim_dist   = distATR_short >= 0 and distATR_short <= maxDistATR * 0.5 ? 10.0 : distATR_short >= 0 and distATR_short <= maxDistATR ? 5.0 : 0.0
 shortPil_tim_candle = bearishEngulfing or shootingStar ? 5.0 : 0.0
 shortCatTiming      = math.min(25.0, shortPil_tim_sqz + shortPil_tim_dist + shortPil_tim_candle)
 
@@ -268,9 +268,9 @@ shortStars = shortConfidenceFinal >= 80 ? 5 : shortConfidenceFinal >= 65 ? 4 : s
 // REGIME DETECTION (4-PILLAR)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Soglie minime
-minConfidenceLong  = 50.0
-minConfidenceShort = 55.0
+// Soglie minime (segnali solo sopra 65%)
+minConfidenceLong  = 65.0
+minConfidenceShort = 65.0
 
 // LONG regime:
 //   - longCatTrend >= 12  → almeno un indicatore di trend allineato (ST=12 o TEMA=13)
