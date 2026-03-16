@@ -402,7 +402,7 @@ var table dashboard = table.new(position.bottom_left, 3, 14, border_width=1, fra
 if barstate.islast
     // ── Header ──
     regimeText  = regime == 1 ? "LONG" : regime == -1 ? "SHORT" : "NEUTRAL"
-    regimeColor = regime == 1 ? color.green : regime == -1 ? color.red : color.gray
+    regimeColor = regime == 1 ? color.green : regime == -1 ? color.red : color.white
 
     table.cell(dashboard, 0, 0, "REGIME DETECTOR v2.0", text_color=color.white, bgcolor=color.blue, text_size=size.normal)
     table.merge_cells(dashboard, 0, 0, 2, 0)
@@ -415,8 +415,8 @@ if barstate.islast
 
     // ── Confidence ──
     table.cell(dashboard, 0, 2, "CONFIDENCE", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
-    table.cell(dashboard, 1, 2, "L: " + str.tostring(longConfidenceFinal, "#") + "%", text_color=longConfidenceFinal >= 50 ? color.lime : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
-    table.cell(dashboard, 2, 2, "S: " + str.tostring(shortConfidenceFinal, "#") + "%", text_color=shortConfidenceFinal >= 50 ? color.red : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 1, 2, "L: " + str.tostring(longConfidenceFinal, "#") + "%", text_color=longConfidenceFinal >= 50 ? color.lime : color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 2, "S: " + str.tostring(shortConfidenceFinal, "#") + "%", text_color=shortConfidenceFinal >= 50 ? color.red : color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
     // ── Market HTF ──
     marketText  = isStrongBear ? "STRONG BEAR" : isBearMarket ? "BEAR" : "BULL"
@@ -434,7 +434,7 @@ if barstate.islast
 
     // ── TREND (pilastro 1) ──
     dTrend   = showLong ? longCatTrend : shortCatTrend
-    trendCol = dTrend >= 20 ? color.green : dTrend >= 12 ? color.orange : color.red
+    trendCol = dTrend >= 20 ? color.green : dTrend >= 12 ? color.white : color.red
     trendST  = trend == 1 ? "ST↑" : trend == -1 ? "ST↓" : "ST—"
     trendTM  = temaFastAboveSlow ? "TEMA↑" : temaFastBelowSlow ? "TEMA↓" : "TEMA—"
     table.cell(dashboard, 0, 5, "Trend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
@@ -443,7 +443,7 @@ if barstate.islast
 
     // ── MOMENTUM (pilastro 2) ──
     dMom   = showLong ? longCatMomentum : shortCatMomentum
-    momCol = dMom >= 18 ? color.green : dMom >= 7 ? color.orange : color.red
+    momCol = dMom >= 18 ? color.green : dMom >= 7 ? color.white : color.red
     momWT  = wtBullish ? "WT↑" : "WT↓"
     momRSI = "RSI:" + str.tostring(rsi, "#") + (rsiBullish ? "↑" : "↓")
     momDIV = rsiBullDiv ? " divB" : rsiBearDiv ? " divS" : ""
@@ -453,7 +453,7 @@ if barstate.islast
 
     // ── FORZA (pilastro 3) ──
     dStr   = showLong ? longCatStrength : shortCatStrength
-    strCol = dStr >= 18 ? color.green : dStr >= 8 ? color.orange : color.red
+    strCol = dStr >= 18 ? color.green : dStr >= 8 ? color.white : color.red
     strADX = "ADX:" + str.tostring(adx, "#") + (adxBullish ? "↑" : "↓")
     strVOL = highVolume ? "VOL↑" : "vol—"
     table.cell(dashboard, 0, 7, "Forza", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
@@ -462,7 +462,7 @@ if barstate.islast
 
     // ── TIMING (pilastro 4) ──
     dTim   = showLong ? longCatTiming : shortCatTiming
-    timCol = dTim >= 15 ? color.green : dTim >= 5 ? color.orange : color.red
+    timCol = dTim >= 15 ? color.green : dTim >= 5 ? color.white : color.red
     timSQZ = sqzOn ? "SQZ" : sqzOff ? (sqzMomUp ? "FIRE↑" : "FIRE↓") : "noSqz"
     dispDist = showLong ? distATR_long : distATR_short
     timDST = dispDist <= maxDistATR * 0.5 ? "D:near" : dispDist <= maxDistATR ? "D:ok" : "D:far"
