@@ -478,7 +478,7 @@ if barstate.islast
     warnRsi = rsiOB ? "RSI:OB " : rsiOS ? "RSI:OS " : ""
     warnDist = distATR_short < 0 and isBearMarket ? "PREZZO > TEMA " : ""
     warnText = warnLat + warnWt + warnRsi + warnDist
-    warnColor = str.length(warnText) > 0 ? color.orange : color.new(color.gray, 30)
+    warnColor = str.length(warnText) > 0 ? color.white : color.new(color.gray, 30)
     table.cell(dashboard, 0, 9, "Avvisi", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
     table.cell(dashboard, 1, 9, str.length(warnText) > 0 ? warnText : "Nessuno", text_color=warnColor, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
     table.merge_cells(dashboard, 1, 9, 2, 9)
