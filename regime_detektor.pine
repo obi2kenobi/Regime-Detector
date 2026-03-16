@@ -49,6 +49,7 @@ grp_filter = "Filter Settings"
 maxDistATR   = input.float(1.5, "Max distance ATR", group=grp_filter)
 volMultiplier = input.float(1.2, "Volume multiplier", group=grp_filter)
 slopeThreshold = input.float(0.008, "Slope threshold", group=grp_filter)
+useStrongBearBoost = input.bool(true, "Boost Confidence in Strong Bear", group=grp_filter, tooltip="In Strong Bear (EMA50 < TEMA200 su HTF) il confidence SHORT viene moltiplicato x1.15. Riflette il contesto di bear strutturale confermato.")
 
 grp_tpsl = "TP/SL Settings"
 atrMultiplierSL = input.float(1.5, "Stop Loss ATR multiplier", group=grp_tpsl)
@@ -77,6 +78,8 @@ close_htf = request.security(syminfo.tickerid, tf_filter, close)
 tema200_htf = request.security(syminfo.tickerid, tf_filter, 3*ta.ema(close, 200) - 3*ta.ema(ta.ema(close, 200), 200) + ta.ema(ta.ema(ta.ema(close, 200), 200), 200))
 isBearMarket = close_htf < tema200_htf
 isBullMarket = close_htf > tema200_htf
+ema50_htf = request.security(syminfo.tickerid, tf_filter, ta.ema(close, 50))
+isStrongBear = isBearMarket and not na(ema50_htf) and ema50_htf < tema200_htf
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // INDICATORI PRINCIPALI
@@ -254,11 +257,13 @@ shortCatStrength    = math.min(25.0, shortPil_str_adx + shortPil_str_vol)
 shortPil_tim_sqz    = sqzOff and sqzMomDown ? 10.0 : 0.0
 shortPil_tim_dist   = distATR_short >= 0 and distATR_short <= maxDistATR * 0.5 ? 10.0 : distATR_short >= 0 and distATR_short <= maxDistATR ? 5.0 : 0.0
 shortPil_tim_candle = bearishEngulfing or shootingStar ? 5.0 : 0.0
-shortCatTiming      = math.min(25.0, shortPil_tim_sqz + shortPil_tim_dist + shortPil_tim_candle)
+shortPil_tim_rsiOB  = rsiOB and isBearMarket ? 8.0 : 0.0
+shortCatTiming      = math.min(25.0, shortPil_tim_sqz + shortPil_tim_dist + shortPil_tim_candle + shortPil_tim_rsiOB)
 
 // Totale Short (attivo solo in bear market)
 shortConfidence      = shortCatTrend + shortCatMomentum + shortCatStrength + shortCatTiming
-shortConfidenceFinal = isBearMarket ? math.min(100.0, shortConfidence) : 0.0
+strongBearBoost      = useStrongBearBoost and isStrongBear ? 1.15 : 1.0
+shortConfidenceFinal = isBearMarket ? math.min(100.0, shortConfidence * strongBearBoost) : 0.0
 
 // ── Stelle (1-5) ──
 longStars  = longConfidenceFinal >= 80 ? 5 : longConfidenceFinal >= 65 ? 4 : longConfidenceFinal >= 50 ? 3 : longConfidenceFinal >= 35 ? 2 : longConfidenceFinal >= 20 ? 1 : 0
@@ -411,8 +416,8 @@ if barstate.islast
     table.cell(dashboard, 2, 2, "S: " + str.tostring(shortConfidenceFinal, "#") + "%", text_color=shortConfidenceFinal >= 50 ? color.red : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
     // ── Market HTF ──
-    marketText  = isBearMarket ? "BEAR" : "BULL"
-    marketColor = isBearMarket ? color.red : color.green
+    marketText  = isStrongBear ? "STRONG BEAR" : isBearMarket ? "BEAR" : "BULL"
+    marketColor = isStrongBear ? color.new(color.red, 0) : isBearMarket ? color.new(color.red, 40) : color.green
     table.cell(dashboard, 0, 3, "Market HTF", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.tiny)
     table.cell(dashboard, 1, 3, marketText, text_color=color.white, bgcolor=marketColor, text_size=size.small)
     table.cell(dashboard, 2, 3, tf_filter, text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
@@ -459,9 +464,10 @@ if barstate.islast
     dispDist = showLong ? distATR_long : distATR_short
     timDST = dispDist <= maxDistATR * 0.5 ? "D:near" : dispDist <= maxDistATR ? "D:ok" : "D:far"
     timCND = bullishEngulfing or hammer or bearishEngulfing or shootingStar ? " CND" : ""
+    timRSI = rsiOB and isBearMarket ? " RSI:OB" : ""
     table.cell(dashboard, 0, 8, "Timing", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
     table.cell(dashboard, 1, 8, str.tostring(dTim, "#") + "/25", text_color=timCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
-    table.cell(dashboard, 2, 8, timSQZ + " " + timDST + timCND, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 8, timSQZ + " " + timDST + timCND + timRSI, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
     // ── Avvisi ──
     warnLat = isLateral ? "LATERAL " : ""
