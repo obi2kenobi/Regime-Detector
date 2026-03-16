@@ -97,6 +97,7 @@ temaFastAboveSlow = tema_fast > tema_slow
 temaFastBelowSlow = tema_fast < tema_slow
 
 // --- ATR (dal timeframe operativo, non dal grafico corrente) ---
+// ATR calcolati sul TF operativo — non usare ta.atr() direttamente
 atr   = request.security(syminfo.tickerid, tf, ta.atr(stPeriod))
 atr14 = request.security(syminfo.tickerid, tf, ta.atr(14))
 
@@ -186,7 +187,9 @@ isFlatSlope = tema_slope_ratio < slopeThreshold
 rangeHigh5 = ta.highest(high_tf, 5)
 rangeLow5  = ta.lowest(low_tf, 5)
 rangeCond  = (rangeHigh5 - rangeLow5) / close_tf < 0.01
-isLateral  = (isFlatSlope and rangeCond) or sqzOn  // laterale se entrambe le condizioni o se in squeeze
+// Laterale solo se slope piatto E range ristretto
+// Lo squeeze è gestito nel pilastro Timing, non qui
+isLateral  = isFlatSlope and rangeCond
 
 // --- Volume ---
 volMA = ta.sma(vol_tf, 20)
@@ -281,10 +284,10 @@ minConfidenceShort = 65.0
 //   - longCatTrend >= 12  → almeno un indicatore di trend allineato (ST=12 o TEMA=13)
 //   - longCatMomentum >= 7 → almeno un indicatore di momentum conferma (WT=7 o RSI=7)
 //   - distanza e lateralita come filtri hard
-longSetup = longCatTrend >= 12 and longCatMomentum >= 7 and distATR_long <= maxDistATR and not isLateral and longConfidenceFinal >= minConfidenceLong
+longSetup = longCatTrend >= 12 and longCatMomentum >= 7 and distATR_long >= 0 and distATR_long <= maxDistATR and not isLateral and longConfidenceFinal >= minConfidenceLong
 
 // SHORT regime: stessi requisiti + bear market obbligatorio
-shortSetup = shortCatTrend >= 12 and shortCatMomentum >= 7 and distATR_short <= maxDistATR and not isLateral and isBearMarket and shortConfidenceFinal >= minConfidenceShort
+shortSetup = shortCatTrend >= 12 and shortCatMomentum >= 7 and distATR_short >= 0 and distATR_short <= maxDistATR and not isLateral and isBearMarket and shortConfidenceFinal >= minConfidenceShort
 
 // Regime finale
 regime = longSetup ? 1 : shortSetup ? -1 : 0
@@ -473,7 +476,8 @@ if barstate.islast
     warnLat = isLateral ? "LATERAL " : ""
     warnWt  = wtOB ? "WT:OB " : wtOS ? "WT:OS " : ""
     warnRsi = rsiOB ? "RSI:OB " : rsiOS ? "RSI:OS " : ""
-    warnText = warnLat + warnWt + warnRsi
+    warnDist = distATR_short < 0 and isBearMarket ? "PREZZO > TEMA " : ""
+    warnText = warnLat + warnWt + warnRsi + warnDist
     warnColor = str.length(warnText) > 0 ? color.orange : color.new(color.gray, 30)
     table.cell(dashboard, 0, 9, "Avvisi", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
     table.cell(dashboard, 1, 9, str.length(warnText) > 0 ? warnText : "Nessuno", text_color=warnColor, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
