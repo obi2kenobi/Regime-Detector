@@ -1,0 +1,674 @@
+//@version=6
+// ──────────────────────────────────────────────────────────────────────────────
+// @title        TEMA-ST-WT REGIME DETECTOR v2.1 - FOOTPRINT ENHANCED
+// @description  Sistema avanzato per identificare regimi LONG/SHORT con
+//               confidence score, TP/SL dinamici, divergenze e multi-confluenza
+// @version      2.1
+// ──────────────────────────────────────────────────────────────────────────────
+
+indicator("REGIME DETECTOR v2.1", overlay=true, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUT TIMEFRAME
+// ═══════════════════════════════════════════════════════════════════════════════
+
+tf = input.string("120", "Timeframe operativo", options = ["60","120","240","D"])
+tf_filter = input.string("D", "Timeframe filtro trend", options = ["D","W"], tooltip="Short attivo SOLO se sotto TEMA 200 su questo TF")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PARAMETRI INDICATORI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+grp_tema = "TEMA Settings"
+temaLen      = input.int(32, "TEMA length", group=grp_tema)
+temaLen_fast = input.int(9, "TEMA Fast length", group=grp_tema, tooltip="Per EMA cross confirmation")
+temaLen_slow = input.int(21, "TEMA Slow length", group=grp_tema)
+
+grp_st = "Supertrend Settings"
+stFactor     = input.float(2.6, "ST factor", group=grp_st)
+stPeriod     = input.int(10, "ST ATR period", group=grp_st)
+
+grp_wt = "WaveTrend Settings"
+wtN1         = input.int(10, "WT n1", group=grp_wt)
+wtN2         = input.int(21, "WT n2", group=grp_wt)
+wtOverbought = input.int(53, "WT Overbought", group=grp_wt)
+wtOversold   = input.int(-53, "WT Oversold", group=grp_wt)
+
+grp_rsi = "RSI Settings"
+rsiLen       = input.int(14, "RSI Length", group=grp_rsi)
+rsiOverbought = input.int(70, "RSI Overbought", group=grp_rsi)
+rsiOversold   = input.int(30, "RSI Oversold", group=grp_rsi)
+rsiDivLen    = input.int(5, "Divergence Lookback", group=grp_rsi)
+
+grp_adx = "ADX Settings"
+adxLen       = input.int(14, "ADX Length", group=grp_adx)
+adxThreshold = input.int(20, "ADX Min Trend Strength", group=grp_adx, tooltip="ADX > 20 = trend presente")
+adxStrongTrend = input.int(30, "ADX Strong Trend", group=grp_adx)
+
+grp_filter = "Filter Settings"
+maxDistATR   = input.float(1.5, "Max distance ATR", group=grp_filter)
+volMultiplier = input.float(1.2, "Volume multiplier", group=grp_filter)
+slopeThreshold = input.float(0.008, "Slope threshold", group=grp_filter)
+useStrongBearBoost = input.bool(true, "Boost Confidence in Strong Bear", group=grp_filter, tooltip="In Strong Bear (EMA50 < TEMA200 su HTF) il confidence SHORT viene moltiplicato x1.15. Riflette il contesto di bear strutturale confermato.")
+
+grp_fp = "Footprint Settings"
+useFP = input.bool(true, "Enable Footprint Data", group=grp_fp, tooltip="Richiede piano Premium/Ultimate. Se disabilitato, il sistema funziona esattamente come v2.0")
+fpTicksPerRow = input.int(30, "Ticks per row", minval=1, maxval=200, group=grp_fp, tooltip="NQ: 20-50 | RTY: 20-40. Controlla la granularità delle righe di prezzo nel footprint")
+fpVAPercent = input.int(70, "Value Area %", minval=50, maxval=90, group=grp_fp, tooltip="Standard: 70%. Area che contiene il X% del volume")
+fpImbalancePercent = input.int(300, "Imbalance threshold %", minval=100, maxval=500, group=grp_fp, tooltip="300 = 3:1 ratio buy/sell per flaggare squilibrio. 400 = più selettivo")
+fpDeltaDivBars = input.int(3, "Delta divergence lookback", minval=2, maxval=10, group=grp_fp, tooltip="Numero di barre per calcolare divergenza delta")
+fpBoostEnabled = input.bool(false, "Enable Footprint Confidence Boost", group=grp_fp, tooltip="ATTENZIONE: abilita solo dopo periodo di osservazione. Modifica il confidence score basandosi su delta e POC migration")
+fpBoostAmount = input.float(3.0, "Boost/Penalty points", minval=1.0, maxval=8.0, step=0.5, group=grp_fp, tooltip="Punti aggiunti/sottratti al confidence quando le condizioni footprint sono soddisfatte")
+
+grp_tpsl = "TP/SL Settings"
+atrMultiplierSL = input.float(1.5, "Stop Loss ATR multiplier", group=grp_tpsl)
+atrMultiplierTP1 = input.float(2.0, "Take Profit 1 ATR multiplier", group=grp_tpsl)
+atrMultiplierTP2 = input.float(3.5, "Take Profit 2 ATR multiplier", group=grp_tpsl)
+atrMultiplierTP3 = input.float(5.0, "Take Profit 3 ATR multiplier", group=grp_tpsl)
+showTPSL     = input.bool(true, "Show TP/SL Levels", group=grp_tpsl)
+
+grp_bb = "Bollinger Bands (Squeeze Detection)"
+bbLen        = input.int(20, "BB Length", group=grp_bb)
+bbMult       = input.float(2.0, "BB Multiplier", group=grp_bb)
+kcLen        = input.int(20, "Keltner Length", group=grp_bb)
+kcMult       = input.float(1.5, "Keltner Multiplier", group=grp_bb)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATI MULTITF
+// ═══════════════════════════════════════════════════════════════════════════════
+
+[close_tf, high_tf, low_tf, hl2_tf, hlc3_tf, vol_tf, open_tf] = request.security(syminfo.tickerid, tf, [close, high, low, hl2, hlc3, volume, open])
+close_htf = request.security(syminfo.tickerid, tf_filter, close)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILTRO BEAR MARKET (HTF)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+tema200_htf = request.security(syminfo.tickerid, tf_filter, 3*ta.ema(close, 200) - 3*ta.ema(ta.ema(close, 200), 200) + ta.ema(ta.ema(ta.ema(close, 200), 200), 200))
+isBearMarket = close_htf < tema200_htf
+isBullMarket = close_htf > tema200_htf
+ema50_htf = request.security(syminfo.tickerid, tf_filter, ta.ema(close, 50))
+isStrongBear = isBearMarket and not na(ema50_htf) and ema50_htf < tema200_htf
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INDICATORI PRINCIPALI
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- TEMA ---
+tema = 3*ta.ema(close_tf, temaLen) - 3*ta.ema(ta.ema(close_tf, temaLen), temaLen) + ta.ema(ta.ema(ta.ema(close_tf, temaLen), temaLen), temaLen)
+tema_fast = 3*ta.ema(close_tf, temaLen_fast) - 3*ta.ema(ta.ema(close_tf, temaLen_fast), temaLen_fast) + ta.ema(ta.ema(ta.ema(close_tf, temaLen_fast), temaLen_fast), temaLen_fast)
+tema_slow = 3*ta.ema(close_tf, temaLen_slow) - 3*ta.ema(ta.ema(close_tf, temaLen_slow), temaLen_slow) + ta.ema(ta.ema(ta.ema(close_tf, temaLen_slow), temaLen_slow), temaLen_slow)
+
+// TEMA Cross
+temaCrossUp = ta.crossover(tema_fast, tema_slow)
+temaCrossDown = ta.crossunder(tema_fast, tema_slow)
+temaFastAboveSlow = tema_fast > tema_slow
+temaFastBelowSlow = tema_fast < tema_slow
+
+// --- ATR (dal timeframe operativo, non dal grafico corrente) ---
+// ATR calcolati sul TF operativo — non usare ta.atr() direttamente
+atr   = request.security(syminfo.tickerid, tf, ta.atr(stPeriod))
+atr14 = request.security(syminfo.tickerid, tf, ta.atr(14))
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VOLUME FOOTPRINT DATA (richiede Premium/Ultimate)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// UNA SOLA chiamata request.footprint() per script — estrarre TUTTI i dati necessari qui
+footprint fp = useFP ? request.footprint(fpTicksPerRow, fpVAPercent, fpImbalancePercent) : na
+
+// --- Metriche aggregate della barra ---
+float fpDelta     = not na(fp) ? fp.delta() : na
+float fpBuyVol    = not na(fp) ? fp.buy_volume() : na
+float fpSellVol   = not na(fp) ? fp.sell_volume() : na
+float fpTotalVol  = not na(fp) ? fp.total_volume() : na
+
+// --- POC (Point of Control) ---
+float fpPocHigh   = not na(fp) and not na(fp.poc()) ? fp.poc().up_price() : na
+float fpPocLow    = not na(fp) and not na(fp.poc()) ? fp.poc().down_price() : na
+float fpPocMid    = not na(fpPocHigh) and not na(fpPocLow) ? (fpPocHigh + fpPocLow) / 2.0 : na
+
+// --- VAH / VAL (Value Area High / Low) ---
+float fpVAH       = not na(fp) and not na(fp.vah()) ? fp.vah().up_price() : na
+float fpVAL       = not na(fp) and not na(fp.val()) ? fp.val().down_price() : na
+
+// --- Delta medio per normalizzazione ---
+float fpAbsDelta    = not na(fpDelta) ? math.abs(fpDelta) : na
+float fpAvgAbsDelta = ta.sma(nz(fpAbsDelta), 20)
+
+// --- Segnali derivati ---
+
+// 1. DELTA DIVERGENCE (SHORT): prezzo fa higher high ma delta fa lower high
+bool fpDeltaDivShort = not na(fpDelta) and high_tf > ta.highest(high_tf[1], fpDeltaDivBars) and nz(fpDelta) < ta.highest(nz(fpDelta[1]), fpDeltaDivBars)
+
+// 2. DELTA DIVERGENCE (LONG): prezzo fa lower low ma delta fa higher low (meno negativo)
+bool fpDeltaDivLong = not na(fpDelta) and low_tf < ta.lowest(low_tf[1], fpDeltaDivBars) and nz(fpDelta) > ta.lowest(nz(fpDelta[1]), fpDeltaDivBars)
+
+// 3. ABSORPTION: delta positivo ma candela bearish = buyer intrappolati (conferma SHORT)
+bool fpAbsorption = not na(fpDelta) and nz(fpDelta) > 0 and close_tf < open_tf
+
+// 4. BULLISH ABSORPTION: delta negativo ma candela bullish = seller assorbiti (conferma LONG)
+bool fpBullAbsorption = not na(fpDelta) and nz(fpDelta) < 0 and close_tf > open_tf
+
+// 5. EXTREME SELL PRESSURE: delta molto negativo rispetto alla media
+bool fpExtremeSell = not na(fpDelta) and fpDelta < 0 and fpAvgAbsDelta > 0 and math.abs(fpDelta) > fpAvgAbsDelta * 1.5
+
+// 6. EXTREME BUY PRESSURE: delta molto positivo rispetto alla media
+bool fpExtremeBuy = not na(fpDelta) and fpDelta > 0 and fpAvgAbsDelta > 0 and fpDelta > fpAvgAbsDelta * 1.5
+
+// 7. POC MIGRATION: direzione del POC nelle ultime N barre
+float fpPocSlope = not na(fpPocMid) and not na(fpPocMid[3]) ? (fpPocMid - fpPocMid[3]) / 3.0 : na
+bool fpPocRising  = not na(fpPocSlope) and fpPocSlope > 0
+bool fpPocFalling = not na(fpPocSlope) and fpPocSlope < 0
+
+// 8. CVD approssimato (Cumulative Volume Delta) — somma cumulativa del delta
+var float fpCVD = 0.0
+fpCVD := not na(fpDelta) ? fpCVD + fpDelta : fpCVD
+float fpCVD_sma5 = ta.sma(fpCVD, 5)
+bool fpCVDrising  = fpCVD > fpCVD_sma5
+bool fpCVDfalling = fpCVD < fpCVD_sma5
+
+// --- Conteggio conferme footprint per lato ---
+// SHORT: quante condizioni footprint confermano il lato short?
+int fpShortConfirmCount = (fpDeltaDivShort ? 1 : 0) + (fpAbsorption ? 1 : 0) + (fpExtremeSell ? 1 : 0) + (fpPocFalling ? 1 : 0) + (fpCVDfalling ? 1 : 0)
+
+// LONG: quante condizioni footprint confermano il lato long?
+int fpLongConfirmCount = (fpDeltaDivLong ? 1 : 0) + (fpBullAbsorption ? 1 : 0) + (fpExtremeBuy ? 1 : 0) + (fpPocRising ? 1 : 0) + (fpCVDrising ? 1 : 0)
+
+// --- Supertrend ---
+upC = hl2_tf - stFactor * atr
+dnC = hl2_tf + stFactor * atr
+var float _up = na
+var float _dn = na
+var int trend = 0
+_up := close_tf[1] > nz(_up[1], upC) ? math.max(upC, nz(_up[1], upC)) : upC
+_dn := close_tf[1] < nz(_dn[1], dnC) ? math.min(dnC, nz(_dn[1], dnC)) : dnC
+trend := close_tf > _dn[1] ? 1 : close_tf < _up[1] ? -1 : nz(trend[1])
+
+// --- Wave Trend ---
+ap  = hlc3_tf
+esa = ta.ema(ap, wtN1)
+d   = ta.ema(math.abs(ap - esa), wtN1)
+ci  = d != 0 ? (ap - esa) / (0.015 * d) : 0.0
+wt1 = ta.ema(ci, wtN2)
+wt2 = ta.sma(wt1, 4)
+
+wtBullish = wt1 > wt2
+wtBearish = wt1 < wt2
+wtCrossUp = ta.crossover(wt1, wt2)
+wtCrossDown = ta.crossunder(wt1, wt2)
+wtOB = wt1 > wtOverbought
+wtOS = wt1 < wtOversold
+
+// --- RSI ---
+rsi = ta.rsi(close_tf, rsiLen)
+rsiOB = rsi > rsiOverbought
+rsiOS = rsi < rsiOversold
+rsiBullish = rsi > 50
+rsiBearish = rsi < 50
+
+// RSI Divergence Detection
+// Bullish divergence: price makes lower low, RSI makes higher low
+rsiLow = ta.lowest(rsi, rsiDivLen)
+priceLow = ta.lowest(low_tf, rsiDivLen)
+rsiBullDiv = low_tf <= priceLow[rsiDivLen] and rsi > rsiLow[rsiDivLen] and rsiOS
+
+// Bearish divergence: price makes higher high, RSI makes lower high
+rsiHigh = ta.highest(rsi, rsiDivLen)
+priceHigh = ta.highest(high_tf, rsiDivLen)
+rsiBearDiv = high_tf >= priceHigh[rsiDivLen] and rsi < rsiHigh[rsiDivLen] and rsiOB
+
+// --- ADX (dal timeframe operativo) ---
+[diplus, diminus, adx] = request.security(syminfo.tickerid, tf, ta.dmi(adxLen, adxLen))
+adxTrending = adx > adxThreshold
+adxStrongTrending = adx > adxStrongTrend
+adxBullish = diplus > diminus
+adxBearish = diminus > diplus
+
+// --- Bollinger Bands Squeeze ---
+bbBasis = ta.sma(close_tf, bbLen)
+bbDev = bbMult * ta.stdev(close_tf, bbLen)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+kcBasis = ta.ema(close_tf, kcLen)
+kcRange = request.security(syminfo.tickerid, tf, ta.atr(kcLen))
+kcUpper = kcBasis + kcMult * kcRange
+kcLower = kcBasis - kcMult * kcRange
+
+// Squeeze: BB inside KC = low volatility, preparing for breakout
+sqzOn  = bbLower > kcLower and bbUpper < kcUpper
+sqzOff = bbLower < kcLower or  bbUpper > kcUpper
+
+// Squeeze momentum
+sqzVal = ta.linreg(close_tf - math.avg(math.avg(ta.highest(high_tf, kcLen), ta.lowest(low_tf, kcLen)), kcBasis), kcLen, 0)
+sqzMomUp = sqzVal > 0
+sqzMomDown = sqzVal < 0
+
+// --- TEMA slope ---
+tema_slope = tema - tema[1]
+tema_slope_pct = (tema_slope / tema[1]) * 100
+tema_bullish = tema_slope_pct > 0.001   // normalizzato sul prezzo, funziona su qualsiasi asset
+tema_bearish = tema_slope_pct < -0.001
+
+// --- Distanza da TEMA ---
+distATR_long = (close_tf - tema) / atr
+distATR_short = (tema - close_tf) / atr
+
+// --- Filtro lateralita migliorato ---
+tema_slope_ratio = math.abs(tema_slope) / atr  // atr gia' sul tf operativo
+isFlatSlope = tema_slope_ratio < slopeThreshold
+rangeHigh5 = ta.highest(high_tf, 5)
+rangeLow5  = ta.lowest(low_tf, 5)
+rangeCond  = (rangeHigh5 - rangeLow5) / close_tf < 0.01
+// Laterale solo se slope piatto E range ristretto
+// Lo squeeze è gestito nel pilastro Timing, non qui
+isLateral  = isFlatSlope and rangeCond
+
+// --- Volume ---
+volMA = ta.sma(vol_tf, 20)
+highVolume = vol_tf > volMA * volMultiplier
+volumeIncreasing = vol_tf > vol_tf[1]
+
+// --- Candlestick Patterns ---
+bullishEngulfing = close_tf[1] < open_tf[1] and close_tf > open_tf and close_tf > open_tf[1] and open_tf < close_tf[1]
+bearishEngulfing = close_tf[1] > open_tf[1] and close_tf < open_tf and close_tf < open_tf[1] and open_tf > close_tf[1]
+hammer = (high_tf - low_tf) > 3 * math.abs(close_tf - open_tf) and (close_tf - low_tf) / (0.001 + high_tf - low_tf) > 0.6 and (open_tf - low_tf) / (0.001 + high_tf - low_tf) > 0.6
+shootingStar = (high_tf - low_tf) > 3 * math.abs(close_tf - open_tf) and (high_tf - close_tf) / (0.001 + high_tf - low_tf) > 0.6 and (high_tf - open_tf) / (0.001 + high_tf - low_tf) > 0.6
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONFIDENCE SCORING - 4 PILASTRI (0-25 ciascuno, totale 0-100)
+// Ogni pilastro misura un aspetto indipendente del contesto di mercato.
+// Confluenza vera = punteggio alto in TUTTI i pilastri, non ridondanza.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── LONG ──────────────────────────────────────────────────────────────────────
+
+// TREND (max 25): la direzione e chiara?
+longPil_trend_st   = trend == 1 ? 12.0 : 0.0
+longPil_trend_tema = temaFastAboveSlow ? 13.0 : 0.0
+longCatTrend       = longPil_trend_st + longPil_trend_tema
+
+// MOMENTUM (max 25): c'e forza dietro il movimento?
+longPil_mom_wt     = wtBullish ? 7.0 : 0.0
+longPil_mom_wtX    = wtCrossUp ? 4.0 : 0.0
+longPil_mom_rsi    = rsiBullish ? 7.0 : 0.0
+longPil_mom_div    = rsiBullDiv ? 7.0 : 0.0
+longCatMomentum    = math.min(25.0, longPil_mom_wt + longPil_mom_wtX + longPil_mom_rsi + longPil_mom_div)
+
+// FORZA (max 25): il movimento e sostenuto? (ADX come valore continuo)
+longPil_str_adx = adx >= 40 and adxBullish ? 18.0 : adx >= 30 and adxBullish ? 15.0 : adx >= 25 and adxBullish ? 12.0 : adx >= 20 and adxBullish ? 8.0 : adx >= 15 and adxBullish ? 4.0 : 0.0
+longPil_str_vol = highVolume ? 7.0 : 0.0
+longCatStrength    = math.min(25.0, longPil_str_adx + longPil_str_vol)
+
+// TIMING (max 25): buon punto di ingresso?
+longPil_tim_sqz    = sqzOff and sqzMomUp ? 10.0 : 0.0
+longPil_tim_dist   = distATR_long >= 0 and distATR_long <= maxDistATR * 0.5 ? 10.0 : distATR_long >= 0 and distATR_long <= maxDistATR ? 5.0 : 0.0
+longPil_tim_candle = bullishEngulfing or hammer ? 5.0 : 0.0
+longCatTiming      = math.min(25.0, longPil_tim_sqz + longPil_tim_dist + longPil_tim_candle)
+
+// Totale Long (4 pilastri invariati)
+longConfidence      = longCatTrend + longCatMomentum + longCatStrength + longCatTiming
+
+// Footprint boost/penalty (solo se abilitato E dati disponibili)
+float fpLongBoost = 0.0
+if fpBoostEnabled and useFP and not na(fpDelta)
+    // Boost: almeno 2 conferme footprint sul lato long
+    if fpLongConfirmCount >= 2
+        fpLongBoost := fpBoostAmount
+    // Penalty: almeno 2 conferme footprint CONTRARIE (lato short attivo con long setup)
+    else if fpShortConfirmCount >= 3
+        fpLongBoost := -fpBoostAmount
+
+longConfidenceFinal = math.min(100.0, math.max(0.0, longConfidence + fpLongBoost))
+
+// ── SHORT ─────────────────────────────────────────────────────────────────────
+
+// TREND (max 25)
+shortPil_trend_st   = trend == -1 ? 12.0 : 0.0
+shortPil_trend_tema = temaFastBelowSlow ? 13.0 : 0.0
+shortCatTrend       = shortPil_trend_st + shortPil_trend_tema
+
+// MOMENTUM (max 25)
+shortPil_mom_wt     = wtBearish ? 7.0 : 0.0
+shortPil_mom_wtX    = wtCrossDown ? 4.0 : 0.0
+shortPil_mom_rsi    = rsiBearish ? 7.0 : 0.0
+shortPil_mom_div    = rsiBearDiv ? 7.0 : 0.0
+shortCatMomentum    = math.min(25.0, shortPil_mom_wt + shortPil_mom_wtX + shortPil_mom_rsi + shortPil_mom_div)
+
+// FORZA (max 25)
+shortPil_str_adx = adx >= 40 and adxBearish ? 18.0 : adx >= 30 and adxBearish ? 15.0 : adx >= 25 and adxBearish ? 12.0 : adx >= 20 and adxBearish ? 8.0 : adx >= 15 and adxBearish ? 4.0 : 0.0
+shortPil_str_vol = highVolume ? 7.0 : 0.0
+shortCatStrength    = math.min(25.0, shortPil_str_adx + shortPil_str_vol)
+
+// TIMING (max 25)
+shortPil_tim_sqz    = sqzOff and sqzMomDown ? 10.0 : 0.0
+shortPil_tim_dist   = distATR_short >= 0 and distATR_short <= maxDistATR * 0.5 ? 10.0 : distATR_short >= 0 and distATR_short <= maxDistATR ? 5.0 : 0.0
+shortPil_tim_candle = bearishEngulfing or shootingStar ? 5.0 : 0.0
+shortPil_tim_rsiOB  = rsiOB and isBearMarket ? 8.0 : 0.0
+shortCatTiming      = math.min(25.0, shortPil_tim_sqz + shortPil_tim_dist + shortPil_tim_candle + shortPil_tim_rsiOB)
+
+// Totale Short (4 pilastri invariati, attivo solo in bear market)
+shortConfidence      = shortCatTrend + shortCatMomentum + shortCatStrength + shortCatTiming
+strongBearBoost      = useStrongBearBoost and isStrongBear ? 1.15 : 1.0
+
+// Footprint boost/penalty (solo se abilitato E dati disponibili)
+float fpShortBoost = 0.0
+if fpBoostEnabled and useFP and not na(fpDelta)
+    // Boost: almeno 2 conferme footprint sul lato short
+    if fpShortConfirmCount >= 2
+        fpShortBoost := fpBoostAmount
+    // Penalty: almeno 2 conferme footprint CONTRARIE (lato long forte con short setup)
+    else if fpLongConfirmCount >= 3
+        fpShortBoost := -fpBoostAmount
+
+shortConfidenceFinal = isBearMarket ? math.min(100.0, math.max(0.0, shortConfidence * strongBearBoost + fpShortBoost)) : 0.0
+
+// ── Stelle (1-5) ──
+longStars  = longConfidenceFinal >= 80 ? 5 : longConfidenceFinal >= 65 ? 4 : longConfidenceFinal >= 50 ? 3 : longConfidenceFinal >= 35 ? 2 : longConfidenceFinal >= 20 ? 1 : 0
+shortStars = shortConfidenceFinal >= 80 ? 5 : shortConfidenceFinal >= 65 ? 4 : shortConfidenceFinal >= 50 ? 3 : shortConfidenceFinal >= 35 ? 2 : shortConfidenceFinal >= 20 ? 1 : 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// REGIME DETECTION (4-PILLAR)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Soglie minime (segnali solo sopra 65%)
+minConfidenceLong  = 65.0
+minConfidenceShort = 65.0
+
+// LONG regime:
+//   - longCatTrend >= 12  → almeno un indicatore di trend allineato (ST=12 o TEMA=13)
+//   - longCatMomentum >= 7 → almeno un indicatore di momentum conferma (WT=7 o RSI=7)
+//   - distanza e lateralita come filtri hard
+longSetup = longCatTrend >= 12 and longCatMomentum >= 7 and distATR_long >= 0 and distATR_long <= maxDistATR and not isLateral and longConfidenceFinal >= minConfidenceLong
+
+// SHORT regime: stessi requisiti + bear market obbligatorio
+shortSetup = shortCatTrend >= 12 and shortCatMomentum >= 7 and distATR_short >= 0 and distATR_short <= maxDistATR and not isLateral and isBearMarket and shortConfidenceFinal >= minConfidenceShort
+
+// Regime finale
+regime = longSetup ? 1 : shortSetup ? -1 : 0
+
+// Segnali Entry
+longEntry  = regime == 1 and regime[1] != 1
+shortEntry = regime == -1 and regime[1] != -1
+exitSignal = regime == 0 and regime[1] != 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAKE PROFIT & STOP LOSS LEVELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var float entryPrice = na
+var float stopLoss = na
+var float tp1 = na
+var float tp2 = na
+var float tp3 = na
+var int currentPosition = 0  // 1 = long, -1 = short, 0 = flat
+
+if longEntry
+    entryPrice := close_tf
+    stopLoss := close_tf - atr14 * atrMultiplierSL
+    tp1 := close_tf + atr14 * atrMultiplierTP1
+    tp2 := close_tf + atr14 * atrMultiplierTP2
+    tp3 := close_tf + atr14 * atrMultiplierTP3
+    currentPosition := 1
+
+if shortEntry
+    entryPrice := close_tf
+    stopLoss := close_tf + atr14 * atrMultiplierSL
+    tp1 := close_tf - atr14 * atrMultiplierTP1
+    tp2 := close_tf - atr14 * atrMultiplierTP2
+    tp3 := close_tf - atr14 * atrMultiplierTP3
+    currentPosition := -1
+
+if exitSignal
+    entryPrice := na
+    stopLoss := na
+    tp1 := na
+    tp2 := na
+    tp3 := na
+    currentPosition := 0
+
+// Risk/Reward calculation
+riskPips = math.abs(entryPrice - stopLoss)
+rr1 = riskPips > 0 ? math.abs(tp1 - entryPrice) / riskPips : na
+rr2 = riskPips > 0 ? math.abs(tp2 - entryPrice) / riskPips : na
+rr3 = riskPips > 0 ? math.abs(tp3 - entryPrice) / riskPips : na
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VISUALIZZAZIONE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Background con indicazione bear/bull market
+bgMarket = isBearMarket ? color.new(color.red, 97) : color.new(color.green, 97)
+bgcolor(bgMarket)
+
+// Background regime operativo con intensita basata su confidence
+longBgIntensity = longConfidenceFinal >= 80 ? 80 : longConfidenceFinal >= 65 ? 85 : 90
+shortBgIntensity = shortConfidenceFinal >= 80 ? 80 : shortConfidenceFinal >= 65 ? 85 : 90
+bgColor = regime == 1 ? color.new(color.green, longBgIntensity) : regime == -1 ? color.new(color.red, shortBgIntensity) : na
+bgcolor(bgColor)
+
+// TEMA 200 HTF
+plot(tema200_htf, "TEMA 200 HTF", color=isBearMarket ? color.new(color.red, 30) : color.new(color.green, 30), linewidth=3, style=plot.style_line)
+
+// TEMA operativo
+temaColor = tema_bullish ? color.green : tema_bearish ? color.red : color.gray
+plot(tema, "TEMA", color=temaColor, linewidth=2)
+
+// TEMA Fast/Slow
+plot(tema_fast, "TEMA Fast", color=color.new(color.blue, 50), linewidth=1)
+plot(tema_slow, "TEMA Slow", color=color.new(color.orange, 50), linewidth=1)
+
+// Supertrend
+plot(trend==1 ? _up : na, "ST Up", color=color.green, linewidth=2)
+plot(trend==-1 ? _dn : na, "ST Dn", color=color.red, linewidth=2)
+
+// TP/SL Levels
+plot(showTPSL and currentPosition != 0 ? entryPrice : na, "Entry", color=color.white, linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? stopLoss : na, "Stop Loss", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp1 : na, "TP1", color=color.new(color.lime, 30), linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp2 : na, "TP2", color=color.new(color.lime, 20), linewidth=1, style=plot.style_linebr)
+plot(showTPSL and currentPosition != 0 ? tp3 : na, "TP3", color=color.new(color.lime, 0), linewidth=2, style=plot.style_linebr)
+
+// POC Level (solo se footprint abilitato)
+plot(useFP and not na(fpPocMid) ? fpPocMid : na, "FP POC", color=color.new(color.purple, 30), linewidth=2, style=plot.style_stepline)
+plot(useFP and not na(fpVAH) ? fpVAH : na, "FP VAH", color=color.new(color.purple, 60), linewidth=1, style=plot.style_stepline)
+plot(useFP and not na(fpVAL) ? fpVAL : na, "FP VAL", color=color.new(color.purple, 60), linewidth=1, style=plot.style_stepline)
+
+// Segnali entry con confidence
+plotshape(longEntry, "LONG Signal", shape.triangleup, location.belowbar, color.new(color.green, 0), size=size.normal)
+plotshape(shortEntry, "SHORT Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
+
+// Labels con confidence
+if longEntry
+    label.new(bar_index, low_tf - atr14, "LONG\n" + str.tostring(longConfidenceFinal, "#") + "%\n" + str.tostring(longStars) + " stelle", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if shortEntry
+    label.new(bar_index, high_tf + atr14, "SHORT\n" + str.tostring(shortConfidenceFinal, "#") + "%\n" + str.tostring(shortStars) + " stelle", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+// Divergence markers
+plotshape(rsiBullDiv and not rsiBullDiv[1], "RSI Bull Div", shape.diamond, location.belowbar, color.new(color.lime, 0), size=size.tiny)
+plotshape(rsiBearDiv and not rsiBearDiv[1], "RSI Bear Div", shape.diamond, location.abovebar, color.new(color.fuchsia, 0), size=size.tiny)
+
+// Squeeze indicator
+plotshape(sqzOn, "Squeeze On", shape.square, location.bottom, color.new(color.red, 0), size=size.tiny)
+plotshape(sqzOff, "Squeeze Off", shape.square, location.bottom, color.new(color.green, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DASHBOARD COMPLETA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var table dashboard = table.new(position.bottom_left, 3, 17, border_width=1, frame_width=2, frame_color=color.gray)
+
+if barstate.islast
+    // ── Header ──
+    regimeText  = regime == 1 ? "LONG" : regime == -1 ? "SHORT" : "NEUTRAL"
+    regimeColor = regime == 1 ? color.green : regime == -1 ? color.red : color.white
+
+    table.cell(dashboard, 0, 0, "REGIME DETECTOR v2.1", text_color=color.white, bgcolor=color.blue, text_size=size.normal)
+    table.merge_cells(dashboard, 0, 0, 2, 0)
+
+    // ── Regime + Stars ──
+    starsText = regime == 1 ? str.tostring(longStars) + "/5" : regime == -1 ? str.tostring(shortStars) + "/5" : "-"
+    table.cell(dashboard, 0, 1, "REGIME", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.small)
+    table.cell(dashboard, 1, 1, regimeText, text_color=color.white, bgcolor=regimeColor, text_size=size.normal)
+    table.cell(dashboard, 2, 1, starsText, text_color=color.white, bgcolor=regimeColor, text_size=size.small)
+
+    // ── Confidence ──
+    table.cell(dashboard, 0, 2, "CONFIDENCE", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 2, "L: " + str.tostring(longConfidenceFinal, "#") + "%", text_color=longConfidenceFinal >= 50 ? color.lime : color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 2, "S: " + str.tostring(shortConfidenceFinal, "#") + "%", text_color=shortConfidenceFinal >= 50 ? color.red : color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ── Market HTF ──
+    marketText  = isStrongBear ? "STRONG BEAR" : isBearMarket ? "BEAR" : "BULL"
+    marketColor = isStrongBear ? color.new(color.red, 0) : isBearMarket ? color.new(color.red, 40) : color.green
+    table.cell(dashboard, 0, 3, "Market HTF", text_color=color.white, bgcolor=color.new(color.gray, 40), text_size=size.tiny)
+    table.cell(dashboard, 1, 3, marketText, text_color=color.white, bgcolor=marketColor, text_size=size.small)
+    table.cell(dashboard, 2, 3, tf_filter, text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+
+    // ── Separator: CONTESTO ──
+    table.cell(dashboard, 0, 4, "── CONTESTO ──", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.tiny)
+    table.merge_cells(dashboard, 0, 4, 2, 4)
+
+    // Mostra le categorie per il lato dominante (regime attivo, o lato con confidence piu alta)
+    showLong = regime == 1 or (regime == 0 and longConfidenceFinal >= shortConfidenceFinal)
+
+    // ── TREND (pilastro 1) ──
+    dTrend   = showLong ? longCatTrend : shortCatTrend
+    trendCol = dTrend >= 20 ? color.green : dTrend >= 12 ? color.white : color.red
+    trendST  = trend == 1 ? "ST↑" : trend == -1 ? "ST↓" : "ST—"
+    trendTM  = temaFastAboveSlow ? "TEMA↑" : temaFastBelowSlow ? "TEMA↓" : "TEMA—"
+    table.cell(dashboard, 0, 5, "Trend", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 5, str.tostring(dTrend, "#") + "/25", text_color=trendCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 5, trendST + " " + trendTM, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ── MOMENTUM (pilastro 2) ──
+    dMom   = showLong ? longCatMomentum : shortCatMomentum
+    momCol = dMom >= 18 ? color.green : dMom >= 7 ? color.white : color.red
+    momWT  = wtBullish ? "WT↑" : "WT↓"
+    momRSI = "RSI:" + str.tostring(rsi, "#") + (rsiBullish ? "↑" : "↓")
+    momDIV = rsiBullDiv ? " divB" : rsiBearDiv ? " divS" : ""
+    table.cell(dashboard, 0, 6, "Momentum", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 6, str.tostring(dMom, "#") + "/25", text_color=momCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 6, momWT + " " + momRSI + momDIV, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ── FORZA (pilastro 3) ──
+    dStr   = showLong ? longCatStrength : shortCatStrength
+    strCol = dStr >= 18 ? color.green : dStr >= 8 ? color.white : color.red
+    strADX = "ADX:" + str.tostring(adx, "#") + (adxBullish ? "↑" : "↓")
+    strVOL = highVolume ? "VOL↑" : "vol—"
+    table.cell(dashboard, 0, 7, "Forza", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 7, str.tostring(dStr, "#") + "/25", text_color=strCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 7, strADX + " " + strVOL, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ── TIMING (pilastro 4) ──
+    dTim   = showLong ? longCatTiming : shortCatTiming
+    timCol = dTim >= 15 ? color.green : dTim >= 5 ? color.white : color.red
+    timSQZ = sqzOn ? "SQZ" : sqzOff ? (sqzMomUp ? "FIRE↑" : "FIRE↓") : "noSqz"
+    dispDist = showLong ? distATR_long : distATR_short
+    timDST = dispDist <= maxDistATR * 0.5 ? "D:near" : dispDist <= maxDistATR ? "D:ok" : "D:far"
+    timCND = bullishEngulfing or hammer or bearishEngulfing or shootingStar ? " CND" : ""
+    timRSI = rsiOB and isBearMarket ? " RSI:OB" : ""
+    table.cell(dashboard, 0, 8, "Timing", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 8, str.tostring(dTim, "#") + "/25", text_color=timCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+    table.cell(dashboard, 2, 8, timSQZ + " " + timDST + timCND + timRSI, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // ── Avvisi ──
+    warnLat = isLateral ? "LATERAL " : ""
+    warnWt  = wtOB ? "WT:OB " : wtOS ? "WT:OS " : ""
+    warnRsi = rsiOB ? "RSI:OB " : rsiOS ? "RSI:OS " : ""
+    warnDist = distATR_short < 0 and isBearMarket ? "PREZZO > TEMA " : ""
+    warnText = warnLat + warnWt + warnRsi + warnDist
+    hasWarnings = str.length(warnText) > 0
+    table.cell(dashboard, 0, 9, "Avvisi", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+    table.cell(dashboard, 1, 9, hasWarnings ? warnText : "Nessuno", text_color=color.white, bgcolor=hasWarnings ? color.new(color.orange, 30) : color.new(color.gray, 60), text_size=size.tiny)
+    table.merge_cells(dashboard, 1, 9, 2, 9)
+
+    // ── Separator: FOOTPRINT ──
+    if useFP
+        table.cell(dashboard, 0, 10, "── FOOTPRINT ──", text_color=color.white, bgcolor=color.new(color.teal, 50), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, 10, 2, 10)
+
+        // Delta
+        string deltaStr = not na(fpDelta) ? str.tostring(fpDelta, "#.#") : "N/A"
+        color deltaCol = na(fpDelta) ? color.gray : fpDelta > 0 ? color.green : fpDelta < 0 ? color.red : color.white
+        string deltaSignal = fpDeltaDivShort ? "divSHORT" : fpDeltaDivLong ? "divLONG" : fpAbsorption ? "ABSORB↓" : fpBullAbsorption ? "ABSORB↑" : "—"
+        table.cell(dashboard, 0, 11, "Delta", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 11, deltaStr, text_color=deltaCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 11, deltaSignal, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+        // POC + Migration
+        string pocStr = not na(fpPocMid) ? str.tostring(fpPocMid, "#.#") : "N/A"
+        string pocDir = fpPocRising ? "POC↑" : fpPocFalling ? "POC↓" : "POC—"
+        color pocCol = fpPocRising ? color.green : fpPocFalling ? color.red : color.white
+        table.cell(dashboard, 0, 12, "POC", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 12, pocStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 12, pocDir, text_color=pocCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+        // Conferme + Boost
+        string fpConfStr = "L:" + str.tostring(fpLongConfirmCount) + "/5 S:" + str.tostring(fpShortConfirmCount) + "/5"
+        string fpBoostStr = fpBoostEnabled ? (fpLongBoost != 0 ? "L" + (fpLongBoost > 0 ? "+" : "") + str.tostring(fpLongBoost, "#.#") : fpShortBoost != 0 ? "S" + (fpShortBoost > 0 ? "+" : "") + str.tostring(fpShortBoost, "#.#") : "=0") : "OFF"
+        color fpBoostCol = not fpBoostEnabled ? color.gray : (fpLongBoost > 0 or fpShortBoost > 0) ? color.green : (fpLongBoost < 0 or fpShortBoost < 0) ? color.red : color.white
+        table.cell(dashboard, 0, 13, "FP Conf", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 13, fpConfStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 13, fpBoostStr, text_color=fpBoostCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+    // Spostare TP/SL separator e tutto il resto di 3 righe in avanti se FP è attivo
+    int tpslOffset = useFP ? 14 : 10
+
+    // ── Separator: TP/SL ──
+    table.cell(dashboard, 0, tpslOffset, "── TP/SL ──", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.tiny)
+    table.merge_cells(dashboard, 0, tpslOffset, 2, tpslOffset)
+
+    // ── TP/SL Info ──
+    if currentPosition != 0
+        table.cell(dashboard, 0, tpslOffset + 1, "Entry", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, tpslOffset + 1, str.tostring(entryPrice, "#.##"), text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, tpslOffset + 1, "", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+        table.cell(dashboard, 0, tpslOffset + 2, "Stop Loss", text_color=color.white, bgcolor=color.new(color.red, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, tpslOffset + 2, str.tostring(stopLoss, "#.##"), text_color=color.white, bgcolor=color.new(color.red, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, tpslOffset + 2, "Risk", text_color=color.white, bgcolor=color.new(color.red, 60), text_size=size.tiny)
+
+        table.cell(dashboard, 0, tpslOffset + 3, "TP1/2/3", text_color=color.white, bgcolor=color.new(color.green, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, tpslOffset + 3, str.tostring(tp1, "#.##") + "/" + str.tostring(tp2, "#.##") + "/" + str.tostring(tp3, "#.##"), text_color=color.white, bgcolor=color.new(color.green, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, tpslOffset + 3, "RR " + str.tostring(rr1, "#.#") + "/" + str.tostring(rr2, "#.#") + "/" + str.tostring(rr3, "#.#"), text_color=color.white, bgcolor=color.new(color.green, 60), text_size=size.tiny)
+    else
+        table.cell(dashboard, 0, tpslOffset + 1, "No Position", text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, tpslOffset + 1, 2, tpslOffset + 1)
+        table.cell(dashboard, 0, tpslOffset + 2, "", text_color=color.white, bgcolor=color.new(color.gray, 80), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, tpslOffset + 2, 2, tpslOffset + 2)
+        table.cell(dashboard, 0, tpslOffset + 3, "", text_color=color.white, bgcolor=color.new(color.gray, 80), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, tpslOffset + 3, 2, tpslOffset + 3)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Entry alerts con confidence
+alertcondition(longEntry and longStars >= 4, "High Confidence LONG", "LONG SIGNAL (4-5 stelle) su {{ticker}} - Alta Confidenza")
+alertcondition(longEntry and longStars >= 3 and longStars < 4, "Medium Confidence LONG", "LONG SIGNAL (3 stelle) su {{ticker}} - Media Confidenza")
+alertcondition(shortEntry and shortStars >= 4, "High Confidence SHORT", "SHORT SIGNAL (4-5 stelle) su {{ticker}} - Alta Confidenza")
+alertcondition(shortEntry and shortStars >= 3 and shortStars < 4, "Medium Confidence SHORT", "SHORT SIGNAL (3 stelle) su {{ticker}} - Media Confidenza")
+
+// Standard alerts
+alertcondition(longEntry, "Long Entry", "LONG su {{ticker}}")
+alertcondition(shortEntry, "Short Entry", "SHORT su {{ticker}}")
+alertcondition(exitSignal, "Exit Signal", "EXIT - Mercato neutrale su {{ticker}}")
+
+// Market regime change
+alertcondition(isBearMarket and not isBearMarket[1], "Bear Market Start", "INIZIO BEAR MARKET su {{ticker}}")
+alertcondition(isBullMarket and not isBullMarket[1], "Bull Market Start", "INIZIO BULL MARKET su {{ticker}}")
+
+// Divergence alerts
+alertcondition(rsiBullDiv and not rsiBullDiv[1], "RSI Bullish Divergence", "RSI Bullish Divergence su {{ticker}} - Potenziale inversione UP")
+alertcondition(rsiBearDiv and not rsiBearDiv[1], "RSI Bearish Divergence", "RSI Bearish Divergence su {{ticker}} - Potenziale inversione DOWN")
+
+// Squeeze alerts
+alertcondition(sqzOff and sqzOn[1] and sqzMomUp, "Squeeze Fired UP", "Squeeze FIRED UP su {{ticker}} - Momentum bullish")
+alertcondition(sqzOff and sqzOn[1] and sqzMomDown, "Squeeze Fired DOWN", "Squeeze FIRED DOWN su {{ticker}} - Momentum bearish")
+
+// Footprint alerts
+alertcondition(useFP and fpDeltaDivShort and not fpDeltaDivShort[1], "FP Delta Divergence SHORT", "FOOTPRINT: Delta divergence bearish su {{ticker}} - Prezzo sale, delta scende")
+alertcondition(useFP and fpAbsorption and not fpAbsorption[1], "FP Absorption SHORT", "FOOTPRINT: Absorption bearish su {{ticker}} - Delta positivo con candela rossa")
+alertcondition(useFP and fpDeltaDivLong and not fpDeltaDivLong[1], "FP Delta Divergence LONG", "FOOTPRINT: Delta divergence bullish su {{ticker}} - Prezzo scende, delta sale")
