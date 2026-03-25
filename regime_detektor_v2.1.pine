@@ -60,6 +60,10 @@ fpDeltaDivBars = input.int(3, "Delta divergence lookback", minval=2, maxval=10, 
 fpBoostEnabled = input.bool(false, "Enable Footprint Confidence Boost", group=grp_fp, tooltip="ATTENZIONE: abilita solo dopo periodo di osservazione. Modifica il confidence score basandosi su delta e POC migration")
 fpBoostAmount = input.float(3.0, "Boost/Penalty points", minval=1.0, maxval=8.0, step=0.5, group=grp_fp, tooltip="Punti aggiunti/sottratti al confidence quando le condizioni footprint sono soddisfatte")
 
+grp_rss = "═══ REGIME SHIFT SCORE ═══"
+useRegimeShiftScore = input.bool(true, "Abilita Regime Shift Score", group=grp_rss)
+showRSSDetail = input.bool(false, "Mostra contributi dettaglio", group=grp_rss, tooltip="Aggiunge al dashboard una riga per ogni componente del punteggio")
+
 grp_tpsl = "TP/SL Settings"
 atrMultiplierSL = input.float(1.5, "Stop Loss ATR multiplier", group=grp_tpsl)
 atrMultiplierTP1 = input.float(2.0, "Take Profit 1 ATR multiplier", group=grp_tpsl)
@@ -369,6 +373,54 @@ longStars  = longConfidenceFinal >= 80 ? 5 : longConfidenceFinal >= 65 ? 4 : lon
 shortStars = shortConfidenceFinal >= 80 ? 5 : shortConfidenceFinal >= 65 ? 4 : shortConfidenceFinal >= 50 ? 3 : shortConfidenceFinal >= 35 ? 2 : shortConfidenceFinal >= 20 ? 1 : 0
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// REGIME SHIFT SCORE (0-100) — indicatore predittivo passivo
+// Accumula evidenze di indebolimento del regime SHORT corrente
+// ═══════════════════════════════════════════════════════════════════════════════
+
+float rssConfidence = 0.0
+float rssTrend = 0.0
+float rssMomentum = 0.0
+float rssWaveTrend = 0.0
+
+if useRegimeShiftScore
+    // +20: shortConfidenceFinal in calo per 3 barre consecutive
+    if shortConfidenceFinal[0] < shortConfidenceFinal[1] and shortConfidenceFinal[1] < shortConfidenceFinal[2]
+        rssConfidence := 20.0
+
+    // +15: longConfidenceFinal > shortConfidenceFinal (bias long sopra bias short)
+    if longConfidenceFinal > shortConfidenceFinal
+        rssConfidence := rssConfidence + 15.0
+
+    // +15: TEMA cross up oppure temaFastAboveSlow per 2 barre consecutive
+    if temaCrossUp or (temaFastAboveSlow and temaFastAboveSlow[1])
+        rssTrend := 15.0
+
+    // +15: Supertrend UP (trend == 1) per 3+ barre consecutive
+    if trend == 1 and trend[1] == 1 and trend[2] == 1
+        rssTrend := rssTrend + 15.0
+
+    // +10: ADX sotto soglia = trend SHORT si sta indebolendo
+    if adx < adxThreshold
+        rssMomentum := 10.0
+
+    // +10: divergenza bullish RSI attiva
+    if rsiBullDiv
+        rssMomentum := rssMomentum + 10.0
+
+    // +10: squeeze fired con momentum bullish
+    if sqzOff and sqzMomUp
+        rssMomentum := rssMomentum + 10.0
+
+    // +5: WaveTrend uscendo dalla zona di oversold
+    if wt1 > wtOversold * 0.5 and wt1 > wt1[1] and wt1[1] > wt1[2]
+        rssWaveTrend := 5.0
+
+float regimeShiftScore = useRegimeShiftScore ? math.min(rssConfidence + rssTrend + rssMomentum + rssWaveTrend, 100.0) : 0.0
+
+// RSS label interpretazione
+string rssLabel = regimeShiftScore >= 76 ? "REGIME SHIFT" : regimeShiftScore >= 56 ? "TRANSITION?" : regimeShiftScore >= 31 ? "SOFTENING" : "BEAR CONFIRMED"
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // REGIME DETECTION (4-PILLAR)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -498,7 +550,7 @@ plotshape(sqzOff, "Squeeze Off", shape.square, location.bottom, color.new(color.
 // DASHBOARD COMPLETA
 // ═══════════════════════════════════════════════════════════════════════════════
 
-var table dashboard = table.new(position.bottom_left, 3, 18, border_width=1, frame_width=2, frame_color=color.gray)
+var table dashboard = table.new(position.bottom_left, 3, 25, border_width=1, frame_width=2, frame_color=color.gray)
 
 if barstate.islast
     // ── Header ──
@@ -584,37 +636,80 @@ if barstate.islast
     table.cell(dashboard, 1, 9, hasWarnings ? warnText : "Nessuno", text_color=color.white, bgcolor=hasWarnings ? color.new(color.orange, 30) : color.new(color.gray, 60), text_size=size.tiny)
     table.merge_cells(dashboard, 1, 9, 2, 9)
 
-    // ── Separator: FOOTPRINT ──
-    if useFP
-        table.cell(dashboard, 0, 10, "── FOOTPRINT ──", text_color=color.white, bgcolor=color.new(color.teal, 50), text_size=size.tiny)
+    // ── REGIME SHIFT SCORE ──
+    int rssRows = 0
+    if useRegimeShiftScore
+        color rssBgColor = regimeShiftScore >= 76 ? color.new(color.lime, 50) : regimeShiftScore >= 56 ? color.new(color.yellow, 50) : regimeShiftScore >= 31 ? color.new(color.orange, 50) : color.new(color.red, 50)
+        color rssTextColor = regimeShiftScore >= 76 ? color.lime : regimeShiftScore >= 56 ? color.yellow : regimeShiftScore >= 31 ? color.orange : color.red
+
+        // Header row
+        table.cell(dashboard, 0, 10, "── REGIME SHIFT ──", text_color=color.white, bgcolor=rssBgColor, text_size=size.tiny)
         table.merge_cells(dashboard, 0, 10, 2, 10)
+
+        // Score row
+        table.cell(dashboard, 0, 11, "RSS Score", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, 11, str.tostring(regimeShiftScore, "#"), text_color=rssTextColor, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, 11, rssLabel, text_color=rssTextColor, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+        rssRows := 2
+
+        // Detail rows (solo se showRSSDetail)
+        if showRSSDetail
+            // Riga 1: Confidence
+            string confDetail = shortConfidenceFinal[0] < shortConfidenceFinal[1] and shortConfidenceFinal[1] < shortConfidenceFinal[2] ? "Conf↓3bar" : "—"
+            string confScore = "+" + str.tostring(rssConfidence, "#")
+            table.cell(dashboard, 0, 12, "Confidence", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+            table.cell(dashboard, 1, 12, confDetail, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+            table.cell(dashboard, 2, 12, confScore, text_color=rssConfidence > 0 ? color.lime : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+            // Riga 2: Trend/ST
+            string trendDetail = (temaCrossUp ? "TEMAx↑" : temaFastAboveSlow and temaFastAboveSlow[1] ? "TEMA↑2b" : "—") + " " + (trend == 1 and trend[1] == 1 and trend[2] == 1 ? "ST↑3b" : "—")
+            string trendScore = "+" + str.tostring(rssTrend, "#")
+            table.cell(dashboard, 0, 13, "Trend/ST", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+            table.cell(dashboard, 1, 13, trendDetail, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+            table.cell(dashboard, 2, 13, trendScore, text_color=rssTrend > 0 ? color.lime : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+            // Riga 3: Momentum (ADX/RSI/SQZ/WT)
+            string momDetail = (adx < adxThreshold ? "ADX↓" : "—") + " " + (rsiBullDiv ? "divB" : "—") + " " + (sqzOff and sqzMomUp ? "SQZ↑" : "—") + " " + (rssWaveTrend > 0 ? "WT↑" : "—")
+            string momScore = "+" + str.tostring(rssMomentum + rssWaveTrend, "#")
+            table.cell(dashboard, 0, 14, "Momentum", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+            table.cell(dashboard, 1, 14, momDetail, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+            table.cell(dashboard, 2, 14, momScore, text_color=(rssMomentum + rssWaveTrend) > 0 ? color.lime : color.gray, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+
+            rssRows := 5
+
+    // ── Separator: FOOTPRINT ──
+    int fpOffset = 10 + rssRows
+    if useFP
+        table.cell(dashboard, 0, fpOffset, "── FOOTPRINT ──", text_color=color.white, bgcolor=color.new(color.teal, 50), text_size=size.tiny)
+        table.merge_cells(dashboard, 0, fpOffset, 2, fpOffset)
 
         // Delta
         string deltaStr = not na(fpDelta) ? str.tostring(fpDelta, "#.#") : "N/A"
         color deltaCol = na(fpDelta) ? color.gray : fpDelta > 0 ? color.green : fpDelta < 0 ? color.red : color.white
         string deltaSignal = fpDeltaDivShort ? "divSHORT" : fpDeltaDivLong ? "divLONG" : fpAbsorption ? "ABSORB↓" : fpBullAbsorption ? "ABSORB↑" : "—"
-        table.cell(dashboard, 0, 11, "Delta", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
-        table.cell(dashboard, 1, 11, deltaStr, text_color=deltaCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
-        table.cell(dashboard, 2, 11, deltaSignal, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 0, fpOffset + 1, "Delta", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, fpOffset + 1, deltaStr, text_color=deltaCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, fpOffset + 1, deltaSignal, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
         // POC + Migration
         string pocStr = not na(fpPocMid) ? str.tostring(fpPocMid, "#.#") : "N/A"
         string pocDir = fpPocRising ? "POC↑" : fpPocFalling ? "POC↓" : "POC—"
         color pocCol = fpPocRising ? color.green : fpPocFalling ? color.red : color.white
-        table.cell(dashboard, 0, 12, "POC", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
-        table.cell(dashboard, 1, 12, pocStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
-        table.cell(dashboard, 2, 12, pocDir, text_color=pocCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 0, fpOffset + 2, "POC", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, fpOffset + 2, pocStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, fpOffset + 2, pocDir, text_color=pocCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
         // Conferme + Boost
         string fpConfStr = "L:" + str.tostring(fpLongConfirmCount) + "/5 S:" + str.tostring(fpShortConfirmCount) + "/5"
         string fpBoostStr = fpBoostEnabled ? (fpLongBoost != 0 ? "L" + (fpLongBoost > 0 ? "+" : "") + str.tostring(fpLongBoost, "#.#") : fpShortBoost != 0 ? "S" + (fpShortBoost > 0 ? "+" : "") + str.tostring(fpShortBoost, "#.#") : "=0") : "OFF"
         color fpBoostCol = not fpBoostEnabled ? color.gray : (fpLongBoost > 0 or fpShortBoost > 0) ? color.green : (fpLongBoost < 0 or fpShortBoost < 0) ? color.red : color.white
-        table.cell(dashboard, 0, 13, "FP Conf", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
-        table.cell(dashboard, 1, 13, fpConfStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
-        table.cell(dashboard, 2, 13, fpBoostStr, text_color=fpBoostCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 0, fpOffset + 3, "FP Conf", text_color=color.white, bgcolor=color.new(color.gray, 50), text_size=size.tiny)
+        table.cell(dashboard, 1, fpOffset + 3, fpConfStr, text_color=color.white, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
+        table.cell(dashboard, 2, fpOffset + 3, fpBoostStr, text_color=fpBoostCol, bgcolor=color.new(color.gray, 60), text_size=size.tiny)
 
-    // Spostare TP/SL separator e tutto il resto di 3 righe in avanti se FP è attivo
-    int tpslOffset = useFP ? 14 : 10
+    // Offset dinamico: righe base (10) + RSS + FP
+    int tpslOffset = fpOffset + (useFP ? 4 : 0)
 
     // ── Separator: TP/SL ──
     table.cell(dashboard, 0, tpslOffset, "── TP/SL ──", text_color=color.white, bgcolor=color.new(color.purple, 50), text_size=size.tiny)
@@ -672,3 +767,7 @@ alertcondition(sqzOff and sqzOn[1] and sqzMomDown, "Squeeze Fired DOWN", "Squeez
 alertcondition(useFP and fpDeltaDivShort and not fpDeltaDivShort[1], "FP Delta Divergence SHORT", "FOOTPRINT: Delta divergence bearish su {{ticker}} - Prezzo sale, delta scende")
 alertcondition(useFP and fpAbsorption and not fpAbsorption[1], "FP Absorption SHORT", "FOOTPRINT: Absorption bearish su {{ticker}} - Delta positivo con candela rossa")
 alertcondition(useFP and fpDeltaDivLong and not fpDeltaDivLong[1], "FP Delta Divergence LONG", "FOOTPRINT: Delta divergence bullish su {{ticker}} - Prezzo scende, delta sale")
+
+// Regime Shift Score alerts
+alertcondition(useRegimeShiftScore and regimeShiftScore >= 31 and regimeShiftScore[1] < 31, "RSS Softening", "REGIME SHIFT: Inizio SOFTENING su {{ticker}} — Score " + str.tostring(regimeShiftScore, "#"))
+alertcondition(useRegimeShiftScore and regimeShiftScore >= 56 and regimeShiftScore[1] < 56, "RSS Transition Warning", "REGIME SHIFT: TRANSITION? su {{ticker}} — Possibile cambio regime SHORT imminente")
