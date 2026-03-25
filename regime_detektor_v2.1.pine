@@ -769,5 +769,5 @@ alertcondition(useFP and fpAbsorption and not fpAbsorption[1], "FP Absorption SH
 alertcondition(useFP and fpDeltaDivLong and not fpDeltaDivLong[1], "FP Delta Divergence LONG", "FOOTPRINT: Delta divergence bullish su {{ticker}} - Prezzo scende, delta sale")
 
 // Regime Shift Score alerts
-alertcondition(useRegimeShiftScore and regimeShiftScore >= 31 and regimeShiftScore[1] < 31, "RSS Softening", "REGIME SHIFT: Inizio SOFTENING su {{ticker}} — Score " + str.tostring(regimeShiftScore, "#"))
+alertcondition(useRegimeShiftScore and regimeShiftScore >= 31 and regimeShiftScore[1] < 31, "RSS Softening", "REGIME SHIFT: Inizio SOFTENING su {{ticker}} — Score sopra 31")
 alertcondition(useRegimeShiftScore and regimeShiftScore >= 56 and regimeShiftScore[1] < 56, "RSS Transition Warning", "REGIME SHIFT: TRANSITION? su {{ticker}} — Possibile cambio regime SHORT imminente")
