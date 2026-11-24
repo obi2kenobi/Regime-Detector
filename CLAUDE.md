@@ -1,106 +1,33 @@
-# CLAUDE.md — Standard Working Rules
+# CLAUDE.md — Regime-Detector
 
-These rules are binding for every development session. No exceptions.
+Standard di lavoro operativo per questo repo. Il file originale (106 righe, completo delle regole di processo/codice/git) è conservato in `docs/REGOLE-CLAUDE-originale.md`.
 
----
+## Scopo
+Indicatore Pine Script v6 (TradingView) per regimi LONG/SHORT con confidence score, TP/SL dinamici e multi-confluenza.
 
-## 1. Process Rules
+## Struttura
+- `regime_detektor.pine` (v2.0) — primo rilascio.
+- `regime_detektor_v2.1.pine` (v2.1, versione corrente) — superset.
+- `docs/` — documentazione di revisione: `_inventario.tsv`, `_revisione.tsv`, `_guida-lista.txt`. `_revisione.tsv` ha lo schema fissato (file/classe/affermazione/atteso/trovato/esito).
 
-### Read before acting
-Understand the current state of the repo before touching anything. Read relevant files, check git status, understand the context.
+## Build / test / deploy
+- Nessun build, test runner o linter locale.
+- Verifica reale: incollare lo script nello Pine Editor di TradingView e controllare la compilazione.
+- Esito locale: non verificato (nessun test eseguito in locale).
 
-### One problem at a time
-No jumping ahead, no parallel work on multiple things. Step by step. Complete one task before starting the next.
+## Convenzioni
+- Commit: `<type>: <short description>`; nessuna force push; commit dopo ogni step funzionante.
+- Funzioni corte (30-40 righe); un file = una responsabilità; niente codice morto.
+- Niente modifiche non richieste; non toccare le due versioni .pine insieme senza motivo.
 
-### Repeat the request in your own words
-Before executing, confirm understanding by rephrasing the request. Wait for explicit approval before proceeding.
+## Cosa non toccare
+- Non modificare codice/logica Pine senza mandato esplicito.
+- Non aggiungere file o dipendenze fuori dal perimetro.
+- Non committare segreti: nessun dato reale, solo segnaposto (`.env.example`).
 
-### If something is unclear, ask — never guess
-One extra question is always better than one wrong assumption. Never invent requirements, business logic, or expected behavior.
+## Segreti
+Non presenti in repo. I valori reali non vanno mai committati; solo segnaposto in `.env.example`.
 
-### Validate logic before moving on
-The user owns the domain knowledge. Get explicit confirmation that the result is correct before proceeding to the next step.
-
-### Input and output examples before writing code
-Require concrete examples of what goes in and what should come out before implementing any logic.
-
----
-
-## 2. Code Rules
-
-### Only what is asked
-No additions, no spontaneous "improvements", no unrequested initiatives. If it wasn't asked for, don't do it.
-
-### Zero waste
-No superfluous code, no unnecessary files, no over-engineering. The simplest solution that works is the right one.
-
-### Short functions
-If a function exceeds 30-40 lines, it must be broken down. Each function does one thing.
-
-### One file, one responsibility
-No monolithic files. Every file has a single, clear purpose.
-
-### No dead code
-Don't leave commented-out code, unused imports, or placeholder functions. If it's not used, delete it.
-
-### Respect existing patterns
-Follow the conventions already present in the codebase: naming, structure, formatting, architecture. Consistency over personal preference.
-
----
-
-## 3. Communication Rules
-
-### Respond in the user's language
-If the user writes in Italian, respond in Italian. If in English, respond in English. Match the language of the conversation.
-
-### Be direct and concise
-No filler, no unnecessary preambles. State what you're doing and why, then do it.
-
-### Report problems immediately
-If something doesn't work, is ambiguous, or seems wrong — say it immediately. Don't try to silently work around issues.
-
-### Show, don't tell
-When explaining a change, show the relevant code. When reporting a result, show the output.
-
----
-
-## 4. Git Rules
-
-### Commit after every working step
-So we can always roll back to a point that works. Each commit represents a stable, functional state.
-
-### Commit messages format
-Use clear, descriptive messages. Format: `<type>: <short description>`
-
-Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
-
-Example: `feat: add export functionality for usage reports`
-
-Note: files authored before this rule was enforced may show older commit messages that do not follow the format; the format is required from now on.
-
-### Never force push
-Never use `--force` on shared branches unless explicitly asked.
-
-### Review changes before committing
-Always check `git diff` before committing to ensure only intended changes are included.
-
----
-
-## 5. Error Handling
-
-### Read the error completely
-Before attempting a fix, read the full error message and stack trace. Understand the root cause.
-
-### Fix the cause, not the symptom
-Don't add workarounds. Find and fix the actual problem.
-
-### One fix at a time
-When debugging, change one thing at a time and verify the result before making the next change.
-
----
-
-## 6. Project-Specific Notes
-
-- Tech stack: Pine Script (TradingView indicator), v6. Target: TradingView charts.
-- Files: `regime_detektor.pine` (v2.0), `regime_detektor_v2.1.pine` (v2.1). No build step, no local test runner, no linter: changes are validated by pasting the script into TradingView and checking compilation.
-- Deployment: manual; script is loaded in TradingView/Pine Editor.
+## Dove guardare
+- Guida LLM: `docs/LLM-GUIDA.md`.
+- Regole complete originali: `docs/REGOLE-CLAUDE-originale.md`.

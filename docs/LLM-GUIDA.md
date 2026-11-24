@@ -7,7 +7,7 @@ Indicatore Pine Script (TradingView, v6) per identificare regimi LONG/SHORT con 
 - `regime_detektor.pine` (v2.0, 536 righe): primo rilascio.
 - `regime_detektor_v2.1.pine` (v2.1, 773 righe): versione corrente, superset.
 - `docs/`: `_inventario.tsv`, `_revisione.tsv`, `_guida-lista.txt` (documentazione di revisione).
-- `CLAUDE.md`: standard di lavoro.
+- `CLAUDE.md`: standard di lavoro operativo (max 100 righe; originale conservato in `docs/REGOLE-CLAUDE-originale.md`).
 
 ## Avvio / test
 - Nessun build, test runner o linter locale. Verifica reale: incollare lo script nello Pine Editor di TradingView e controllare la compilazione.
