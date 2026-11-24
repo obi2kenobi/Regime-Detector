@@ -2,7 +2,7 @@ file	classe	affermazione	atteso	trovato	esito
 CLAUDE.md	AGGIORNATO	Il file contiene 6 sezioni top-level (##)	6	6	verificato
 CLAUDE.md	AGGIORNATO	Regola 'Never force push' presente in git rules	dichiarata	presente §4 Git Rules	verificato
 CLAUDE.md	AGGIORNATO	Regola funzioni 30-40 righe presente	dichiarata	presente §2 Code Rules	verificato
-CLAUDE.md	DA CORREGGERE	Le commit message seguono formato '<type>: <short description>'	tutti i commit conformi	'Integra M-003.3...' e 'Merge pull request...' non conformi	DIVERSO
-CLAUDE.md	DA CORREGGERE	La sezione 6 indica stack/test/build/linter reali	informazioni tecniche concrete	solo esempi commentati, nessun stack/test/build reale	DIVERSO
-CLAUDE.md	AGGIORNATO-PARZIALE	Il file cita lo stack tecnologico del progetto (file .pine)	menzione pine/TradingView	assente: file resta generico	PARZIALE
+CLAUDE.md	CORRETTO	Le commit message seguono formato '<type>: <short description>'	tutti i commit conformi	'Integra M-003.3...' e 'Merge pull request...' non conformi	CORRETTO 2026-11-24
+CLAUDE.md	CORRETTO	La sezione 6 indica stack/test/build/linter reali	informazioni tecniche concrete	solo esempi commentati, nessun stack/test/build reale	CORRETTO 2026-11-24
+CLAUDE.md	AGGIORNATO	Il file cita lo stack tecnologico del progetto (file .pine)	menzione pine/TradingView	assente: file resta generico	verificato 2026-11-24
 docs/_inventario.tsv	NON-REVISIONATO	Inventario documenti aggiornato	verifica	non revisionato in R2	NON-REVISIONATO

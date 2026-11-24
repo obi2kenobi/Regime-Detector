@@ -76,6 +76,8 @@ Types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`
 
 Example: `feat: add export functionality for usage reports`
 
+Note: files authored before this rule was enforced may show older commit messages that do not follow the format; the format is required from now on.
+
 ### Never force push
 Never use `--force` on shared branches unless explicitly asked.
 
@@ -99,10 +101,6 @@ When debugging, change one thing at a time and verify the result before making t
 
 ## 6. Project-Specific Notes
 
-<!-- Add project-specific instructions below this line -->
-<!-- Examples: -->
-<!-- - Tech stack: React Native + TypeScript -->
-<!-- - Test command: npm test -->
-<!-- - Build command: npm run build -->
-<!-- - Linter: eslint with project config -->
-<!-- - Deployment: describe process -->
+- Tech stack: Pine Script (TradingView indicator), v6. Target: TradingView charts.
+- Files: `regime_detektor.pine` (v2.0), `regime_detektor_v2.1.pine` (v2.1). No build step, no local test runner, no linter: changes are validated by pasting the script into TradingView and checking compilation.
+- Deployment: manual; script is loaded in TradingView/Pine Editor.
