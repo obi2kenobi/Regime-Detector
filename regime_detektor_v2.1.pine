@@ -166,8 +166,8 @@ bool fpPocRising  = not na(fpPocSlope) and fpPocSlope > 0
 bool fpPocFalling = not na(fpPocSlope) and fpPocSlope < 0
 
 // 8. CVD approssimato (Cumulative Volume Delta) — somma cumulativa del delta
-var float fpCVD = 0.0
-fpCVD := not na(fpDelta) ? fpCVD + fpDelta : fpCVD
+// BUG-2 fix: rolling sum instead of unbounded cumulative accumulator (max 100 bars)
+float fpCVD = ta.sum(nz(fpDelta), 100)
 float fpCVD_sma5 = ta.sma(fpCVD, 5)
 bool fpCVDrising  = fpCVD > fpCVD_sma5
 bool fpCVDfalling = fpCVD < fpCVD_sma5
