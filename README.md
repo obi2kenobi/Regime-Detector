@@ -42,3 +42,6 @@ Esempio di flusso:
 ## Verifica
 
 Non esiste un comando locale di test: la verifica reale è la compilazione in TradingView. Non committare `.pine` con errori di sintassi.
+
+## Istruzioni duso
+Vedi [docs/ISTRUZIONI.md](docs/ISTRUZIONI.md).

@@ -26,3 +26,6 @@ Indicatore Pine Script (TradingView, v6) per identificare regimi LONG/SHORT con 
 ## Archivio
 - R1: Integra M-003.3 (9167fee). R2/R3/R4: catena `op/M-004-3-r2` su docs/razionalizzazione-2026-11.
 - Repo: github.com/obi2kenobi/Regime-Detector, default `main`.
+
+## Istruzioni duso
+- Vedi docs/ISTRUZIONI.md per le istruzioni duso di ogni software.
