@@ -532,11 +532,18 @@ plotshape(longEntry, "LONG Signal", shape.triangleup, location.belowbar, color.n
 plotshape(shortEntry, "SHORT Signal", shape.triangledown, location.abovebar, color.new(color.red, 0), size=size.normal)
 
 // Labels con confidence
+var label longLabel = na
+var label shortLabel = na
+
 if longEntry
-    label.new(bar_index, low_tf - atr14, "LONG\n" + str.tostring(longConfidenceFinal, "#") + "%\n" + str.tostring(longStars) + " stelle", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+    if not na(longLabel)
+        label.delete(longLabel)
+    longLabel := label.new(bar_index, low_tf - atr14, "LONG\n" + str.tostring(longConfidenceFinal, "#") + "%\n" + str.tostring(longStars) + " stelle", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
 
 if shortEntry
-    label.new(bar_index, high_tf + atr14, "SHORT\n" + str.tostring(shortConfidenceFinal, "#") + "%\n" + str.tostring(shortStars) + " stelle", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+    if not na(shortLabel)
+        label.delete(shortLabel)
+    shortLabel := label.new(bar_index, high_tf + atr14, "SHORT\n" + str.tostring(shortConfidenceFinal, "#") + "%\n" + str.tostring(shortStars) + " stelle", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
 
 // Divergence markers
 plotshape(rsiBullDiv and not rsiBullDiv[1], "RSI Bull Div", shape.diamond, location.belowbar, color.new(color.lime, 0), size=size.tiny)
