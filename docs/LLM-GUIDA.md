@@ -29,3 +29,6 @@ Indicatore Pine Script (TradingView, v6) per identificare regimi LONG/SHORT con 
 
 ## Istruzioni duso
 - Vedi docs/ISTRUZIONI.md per le istruzioni duso di ogni software.
+
+## Scheda tecnica
+Vedi [docs/SCHEDA-TECNICA.md](docs/SCHEDA-TECNICA.md).

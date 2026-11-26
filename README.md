@@ -43,5 +43,8 @@ Esempio di flusso:
 
 Non esiste un comando locale di test: la verifica reale è la compilazione in TradingView. Non committare `.pine` con errori di sintassi.
 
+## Scheda tecnica
+Vedi [docs/SCHEDA-TECNICA.md](docs/SCHEDA-TECNICA.md).
+
 ## Istruzioni duso
 Vedi [docs/ISTRUZIONI.md](docs/ISTRUZIONI.md).
